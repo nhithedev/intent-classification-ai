@@ -12,7 +12,7 @@ Gọi từ Python:
     corpus_path, label_path = process(
         data_path       = "data.json",
         stopwords_path  = "stopwords.txt",   # None nếu không có
-        output_dir      = "output",           # mặc định "output"
+        input_dir      = "input",           # mặc định "input"
         tokenizer       = "whitespace",       # whitespace | ngram | subword | syllable
         min_freq        = 2,
         max_vocab_size  = 10_000,
@@ -20,7 +20,7 @@ Gọi từ Python:
     )
 
 Đầu ra:
-    output/
+    input/
     ├── corpus.txt      — mỗi dòng là chuỗi token đã xử lý (join bằng space)
     └── labels.txt      — mỗi dòng là nhãn tương ứng
 """
@@ -125,7 +125,7 @@ def _load_json(data_path: str | Path) -> tuple[list[str], list[str]]:
 def process(
     data_path      : str | Path,
     stopwords_path : Optional[str | Path] = None,
-    output_dir     : str | Path = "output",
+    input_dir     : str | Path = "input",
     tokenizer      : str = "whitespace",
     min_freq       : int = 2,
     max_vocab_size : Optional[int] = 10_000,
@@ -137,7 +137,7 @@ def process(
     Args:
         data_path      : Đường dẫn tới file .json chứa dữ liệu.
         stopwords_path : Đường dẫn tới file stopwords.txt (None = bỏ qua).
-        output_dir     : Thư mục lưu kết quả (tạo tự động nếu chưa có).
+        input_dir     : Thư mục lưu kết quả xử lý dataset (tạo tự động nếu chưa có).
         tokenizer      : Phương thức tokenize: 'whitespace' | 'ngram' | 'subword' | 'syllable'.
         min_freq       : Tần suất tối thiểu để từ vào vocab (mặc định 2).
         max_vocab_size : Giới hạn kích thước vocab (None = không giới hạn).
@@ -201,7 +201,7 @@ def process(
     print("  [4/4] LƯU KẾT QUẢ")
     print(SEP)
 
-    out = Path(output_dir)
+    out = Path(input_dir)
     out.mkdir(parents=True, exist_ok=True)
 
     corpus_path = out / "corpus.txt"
@@ -231,7 +231,7 @@ def _parse_args():
     )
     parser.add_argument("--data",       required=True,              help="Đường dẫn file data.json")
     parser.add_argument("--stopwords",  default=None,               help="Đường dẫn file stopwords.txt")
-    parser.add_argument("--output",     default="output",           help="Thư mục lưu kết quả")
+    parser.add_argument("--input",     default="input",           help="Thư mục lưu kết quả")
     parser.add_argument("--tokenizer",  default="whitespace",
                         choices=["whitespace", "ngram", "subword", "syllable"],
                         help="Phương thức tokenize")
@@ -247,7 +247,7 @@ if __name__ == "__main__":
     corpus_file, label_file = process(
         data_path      = args.data,
         stopwords_path = args.stopwords,
-        output_dir     = args.output,
+        input_dir     = args.input,
         tokenizer      = args.tokenizer,
         min_freq       = args.min_freq,
         max_vocab_size = args.max_vocab if args.max_vocab > 0 else None,

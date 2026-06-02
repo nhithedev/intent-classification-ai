@@ -19,7 +19,8 @@ except ImportError as e:
 
 DATA_PATH = notebook_dir.parent.parent / "dataset" / "data" / "data_full.json"
 STOPWORDS_PATH = notebook_dir.parent.parent / "dataset" / "stopwords.txt"
-OUTPUT_DIR = notebook_dir.parent / "output"
+INPUT_DIR = notebook_dir.parent / "input"
+MODEL_DIR = notebook_dir.parent / "model"
 
 
 
@@ -160,14 +161,14 @@ class MultinomialLogisticRegression:
 # ========================================================
 if __name__ == "__main__":
     
-    # Đảm bảo thư mục output tồn tại
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    # Đảm bảo thư mục input tồn tại
+    INPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     # Gọi hàm process và lấy trực tiếp đường dẫn trả về
     corpus_file, labels_file = process(
         data_path       = DATA_PATH,
         stopwords_path  = STOPWORDS_PATH,
-        output_dir      = OUTPUT_DIR,
+        output_dir      = INPUT_DIR,
         tokenizer       = "whitespace", 
         min_freq        = 2,
         max_vocab_size  = 10000,
@@ -248,7 +249,7 @@ if __name__ == "__main__":
     }
 
     # Sinh đường dẫn file an toàn bằng pathlib
-    save_path = OUTPUT_DIR / "model_data.pkl"
+    save_path = MODEL_DIR / "model_data.pkl"
     with open(save_path, 'wb') as f:
         pickle.dump(model_artifacts, f)
 
