@@ -6,7 +6,7 @@ Pipeline NLP tổng hợp cho bài toán học máy.
 Tích hợp tuần tự 3 module:
   ┌─────────────────────────────────────────────────────────────┐
   │  [1] text_preprocessing.py                                  │
-  │      lowercase → bỏ ký tự đặc biệt → bỏ số → norm space   │
+  │      lowercase → bỏ ký tự đặc biệt → bỏ số → norm space     │
   │                          ↓                                  │
   │  [2] stopwords_removal.py                                   │
   │      loại bỏ stopwords từ file .txt                         │
@@ -14,7 +14,7 @@ Tích hợp tuần tự 3 module:
   │  [3] tokenizer.py                                           │
   │      whitespace / syllable / subword / ngram                │
   │                          ↓                                  │
-  │  OUTPUT — chuẩn đầu vào cho học máy:                       │
+  │  OUTPUT — chuẩn đầu vào cho học máy:                        │
   │    • token list          List[str]                          │
   │    • token ids           List[int]         (dùng vocab)     │
   │    • one-hot / BoW       Dict[str, int]    (bag of words)   │
