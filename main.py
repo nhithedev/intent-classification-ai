@@ -16,7 +16,7 @@ if str(LOGISTIC_DIR) not in sys.path:
     sys.path.append(str(LOGISTIC_DIR))
 
 try:
-    from mrl import TfIdfVectorizer, LabelEncoder, MultinomialLogisticRegression, MODEL_DIR, INPUT_DIR
+    from mrl import TfIdfVectorizer, LabelEncoder, MultinomialLogisticRegression, MODEL_DIR, INPUT_DIR # type: ignore
 except ImportError as e:
     print(f"Lỗi Import: {e}. Vui lòng kiểm tra lại đường dẫn thư mục src/logistic-regression/")
     exit(1)
