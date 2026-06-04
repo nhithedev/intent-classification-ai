@@ -1,0 +1,161 @@
+import sys
+import argparse
+import pickle
+import numpy as np
+from pathlib import Path
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+# ==========================================
+# 1. CẤU HÌNH ĐƯỜNG DẪN IMPORT TRÁNH LỖI
+# ==========================================
+ROOT_DIR = Path(__file__).resolve().parent
+LOGISTIC_DIR = ROOT_DIR / "src" / "logistic-regression"
+
+# Thêm thư mục chứa mrl.py vào sys.path để pickle có thể tìm thấy class khi giải nén
+if str(LOGISTIC_DIR) not in sys.path:
+    sys.path.append(str(LOGISTIC_DIR))
+
+try:
+    from mrl import TfIdfVectorizer, LabelEncoder, MultinomialLogisticRegression, MODEL_DIR, INPUT_DIR
+except ImportError as e:
+    print(f"Lỗi Import: {e}. Vui lòng kiểm tra lại đường dẫn thư mục src/logistic-regression/")
+    exit(1)
+
+# ==========================================
+# 2. CÁC HÀM TIỆN ÍCH LÕI
+# ==========================================
+def load_model():
+    save_path = MODEL_DIR / "LogisticRegression_model.pkl"
+    if not save_path.exists():
+        print(f"Không tìm thấy mô hình tại {save_path}. Bạn cần chạy train trước!")
+        exit(1)
+        
+    with open(save_path, 'rb') as f:
+        artifacts = pickle.load(f)
+    return artifacts['vectorizer'], artifacts['label_encoder'], artifacts['model']
+
+# ==========================================
+# 3. CÁC CHỨC NĂNG CỦA CLI
+# ==========================================
+def run_predict(text, threshold):
+    """Chế độ dự đoán 1 câu"""
+    vectorizer, label_encoder, model = load_model()
+    X = vectorizer.transform([text])
+    preds, max_probs = model.predict_with_oos(X, threshold=threshold)
+    
+    # In ra đúng định dạng yêu cầu
+    print(f"> {text}")
+    print(f"  Model     : Logistic Regression")
+    
+    if preds[0] == -1:
+        print(f"  Intent    : [OUT OF SCOPE]")
+    else:
+        label_text = label_encoder.inverse_transform([preds[0]])[0]
+        print(f"  Intent    : {label_text}")
+        
+    print(f"  Confidence: {max_probs[0]:.2f}\n")
+
+
+def run_chat(threshold):
+    """Chế độ chat liên tục với model"""
+    vectorizer, label_encoder, model = load_model()
+    print("\n=== ĐÃ VÀO CHẾ ĐỘ CHAT (Gõ 'exit' hoặc 'quit' để thoát) ===\n")
+    
+    while True:
+        # Đổi prompt nhập từ "Bạn: " sang dấu "> "
+        text = input("> ")
+        if text.lower() in ['exit', 'quit']:
+            print("Đã thoát chế độ chat.")
+            break
+            
+        X = vectorizer.transform([text])
+        preds, probs = model.predict_with_oos(X, threshold=threshold)
+        
+        # In ra định dạng
+        print(f"  Model     : Logistic Regression")
+        if preds[0] == -1:
+            print(f"  Intent    : [OUT OF SCOPE]")
+        else:
+            label_text = label_encoder.inverse_transform([preds[0]])[0]
+            print(f"  Intent    : {label_text}")
+            
+        print(f"  Confidence: {probs[0]:.2f}\n")
+
+def run_eval():
+    """Chế độ chạy test toàn bộ file dữ liệu (Metrics)"""
+    TEST_CORPUS_PATH = INPUT_DIR / "test_corpus.txt"
+    TEST_LABELS_PATH = INPUT_DIR / "test_labels.txt"
+    
+    vectorizer, label_encoder, model = load_model()
+    
+    with open(TEST_CORPUS_PATH, 'r', encoding='utf-8') as f:
+        raw_corpus = f.readlines()
+    with open(TEST_LABELS_PATH, 'r', encoding='utf-8') as f:
+        raw_labels = f.readlines()
+        
+    min_len = min(len(raw_corpus), len(raw_labels))
+    test_corpus = [line.strip() for line in raw_corpus[:min_len] if line.strip()]
+    test_labels_text = [line.strip() for line in raw_labels[:min_len] if line.strip()]
+
+    print("[Tiến trình] Lọc mẫu hợp lệ & Mã hóa TF-IDF...")
+    filtered_corpus = []
+    y_test_true = []
+    skipped = 0
+    
+    for text, lbl in zip(test_corpus, test_labels_text):
+        if lbl in label_encoder.label_to_index:
+            filtered_corpus.append(text)
+            y_test_true.append(label_encoder.label_to_index[lbl])
+        else:
+            skipped += 1
+            
+    y_test_true = np.array(y_test_true)
+    X_test = vectorizer.transform(filtered_corpus)
+    
+    if skipped > 0:
+        print(f"⚠️ Bỏ qua {skipped} mẫu có nhãn lạ chưa xuất hiện lúc Train.")
+        
+    y_test_pred = model.predict(X_test)
+    
+    print("\n" + "="*40)
+    print(f"{'KẾT QUẢ ĐÁNH GIÁ MÔ HÌNH (TEST METRICS)':^40}")
+    print("="*40)
+    avg_method = 'macro' if len(label_encoder.classes) > 2 else 'binary'
+    print(f"Tổng số mẫu test : {len(y_test_true)}")
+    print(f"Chế độ trung bình: {avg_method}\n")
+    
+    print(f"{'Accuracy':<15}: {accuracy_score(y_test_true, y_test_pred):.4f}")
+    print(f"{'Precision':<15}: {precision_score(y_test_true, y_test_pred, average=avg_method, zero_division=0):.4f}")
+    print(f"{'Recall':<15}: {recall_score(y_test_true, y_test_pred, average=avg_method, zero_division=0):.4f}")
+    print(f"{'F1-Score':<15}: {f1_score(y_test_true, y_test_pred, average=avg_method, zero_division=0):.4f}")
+    print("="*40)
+
+# ==========================================
+# 4. ENTRY POINT & PARSER CẤU HÌNH CLI
+# ==========================================
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="CLI Tool for Intent Classification Model")
+    subparsers = parser.add_subparsers(dest="command", help="Chọn chế độ chạy")
+
+    # Command 1: Dự đoán 1 câu
+    parser_predict = subparsers.add_parser("predict", help="Đoán nhãn cho 1 câu văn cụ thể")
+    parser_predict.add_argument("text", type=str, help="Câu văn cần kiểm tra (đặt trong dấu ngoặc kép)")
+    parser_predict.add_argument("-t", "--threshold", type=float, default=0.5, help="Ngưỡng tự tin (OOS Threshold)")
+
+    # Command 2: Chế độ Chat
+    parser_chat = subparsers.add_parser("chat", help="Mở chế độ chat liên tục để test")
+    parser_chat.add_argument("-t", "--threshold", type=float, default=0.5, help="Ngưỡng tự tin (OOS Threshold)")
+
+    # Command 3: Đánh giá mô hình
+    parser_eval = subparsers.add_parser("eval", help="Chạy đánh giá toàn bộ trên tập test_corpus.txt")
+
+    args = parser.parse_args()
+
+    if args.command == "predict":
+        run_predict(args.text, args.threshold)
+    elif args.command == "chat":
+        run_chat(args.threshold)
+    elif args.command == "eval":
+        run_eval()
+    else:
+        parser.print_help()
