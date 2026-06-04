@@ -1,0 +1,49 @@
+import math
+import numpy as np # type: ignore
+# ========================================================
+# 1. COMPONENT: TF-IDF VECTORIZER
+# ========================================================
+class TfIdfVectorizer:
+    def __init__(self):
+        self.vocab = []
+        self.word_to_index = {}
+        self.idf_dict = {}
+
+    def fit_transform(self, documents):
+        """Học từ vựng từ tập huấn luyện và tạo luôn ma trận X"""
+        tokenized_docs = [doc.lower().split() for doc in documents]
+        n_docs = len(documents)
+        
+        # Đếm Document Frequency (DF)
+        df_counts = {}
+        for doc in tokenized_docs:
+            for word in set(doc):
+                df_counts[word] = df_counts.get(word, 0) + 1
+                
+        # Xây dựng từ vựng (Vocabulary)
+        self.vocab = sorted(list(df_counts.keys()))
+        self.word_to_index = {word: idx for idx, word in enumerate(self.vocab)}
+        
+        # Tính IDF cho từng từ
+        self.idf_dict = {word: math.log(n_docs / df) for word, df in df_counts.items()}
+        
+        # Biến đổi thành Ma trận X
+        return self.transform(documents)
+
+    def transform(self, documents):
+        """Dùng cho dữ liệu mới (không học thêm từ vựng mới)"""
+        tokenized_docs = [doc.lower().split() for doc in documents]
+        X = np.zeros((len(documents), len(self.vocab)))
+        
+        for i, doc in enumerate(tokenized_docs):
+            # Tính TF
+            tf = {}
+            for word in doc:
+                tf[word] = tf.get(word, 0) + 1
+                
+            # Ghi vào ma trận X (chỉ lấy những từ đã có trong từ vựng)
+            for word, freq in tf.items():
+                if word in self.word_to_index:
+                    j = self.word_to_index[word]
+                    X[i, j] = freq * self.idf_dict[word]
+        return X
