@@ -1,6 +1,6 @@
 # Intent Classification AI
 
-Dự án này phục vụ mục đích học tập và nghiên cứu liên quan đến chủ đề: **So sánh hiệu quả giữa các thuật toán Machine Learning trong bài toán Phân loại ý định (Intent Classification) trong Tự nhiên Ngôn ngữ (NLP)**.
+Dự án này phục vụ mục đích học tập và nghiên cứu liên quan đến chủ đề: **So sánh hiệu quả giữa các thuật toán Machine Learning trong bài toán Phân loại ý định (Intent Classification) trong Tự nhiên Ngôn ngữ (NLP) với bộ dữ liệu CLINIC 150**.
 
 ## Cấu trúc thư mục chính
 - `dataset/`: Chứa các file dữ liệu thô (.json) và danh sách stopwords.
@@ -29,3 +29,30 @@ Bạn cần cài đặt Python (phiên bản >= 3.7) và các thư viện cần 
    ```bash
    git clone <đường_dẫn_repo_của_bạn>
    cd intent-classification-ai
+
+2. Tạo và kích hoạt môi trường ảo
+    ```bash
+    python -m venv venv
+    # Trên Windows:
+    venv\Scripts\activate
+    # Trên macOS/Linux:
+    source venv/bin/activate
+
+3. Cài đặt các thư viện Python cần thiết
+    ```bash
+    pip install -r requirements.txt
+
+## Hướng dẫn Sử dụng
+Sau khi cài đặt hoàn thành cài đặt. 
+Người dùng có thể chọn giữa các chế độ cli như sau:
+- chat: Mở chế độ tương tác liên tục qua terminal để kiểm tra mô hình. Người dùng nhập câu liên tục và mô hình sẽ trả về kết quả dự đoán. Chọn exit hoặc quit để thoát.
+    ```bash
+    python main.py chat
+
+- predict: Ở chế độ này dùng nhập riêng lẻ từng câu.
+    ```bash
+    python main.py predict "<câu văn người dùng muốn kiểm tra>"
+
+- eval: Chạy đánh giá độ chính xác của mô hình trên toàn bộ tập dữ liệu kiểm thử (test set) và trả về các chỉ số phân tích (Accuracy, Precision, Recall, F1-Score).
+    ```bash
+    python main.py eval
