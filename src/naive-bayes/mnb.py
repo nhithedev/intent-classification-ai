@@ -263,58 +263,63 @@ def evaluate(
 
 
 # ========================================================
-# KHU VỰC HUẤN LUYỆN — BẠN SẼ TỰ VIẾT PHẦN NÀY
+# MAIN PIPELINE
 # ========================================================
 if __name__ == "__main__":
 
-    # TODO (Bước 1): Tạo thư mục lưu model nếu chưa tồn tại
-    # Gợi ý: Dùng MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    # ↓ Viết code của bạn ở đây ↓
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+    # ── Chọn file input ────────────────────────────────────
+    TRAIN_CORPUS = INPUT_DIR / "train_corpus.txt"
+    TRAIN_LABELS = INPUT_DIR / "train_labels.txt"
+    VAL_CORPUS   = INPUT_DIR / "val_corpus.txt"
+    VAL_LABELS   = INPUT_DIR / "val_labels.txt"
 
 
-    # TODO (Bước 2): Khai báo đường dẫn tới 4 file corpus và labels
-    # Gợi ý: Có 4 biến: TRAIN_CORPUS, TRAIN_LABELS, VAL_CORPUS, VAL_LABELS
-    #         Tất cả đều nằm trong thư mục INPUT_DIR
-    # ↓ Viết code của bạn ở đây ↓
+    # ── Bước 1: Đọc dữ liệu ───────────────────────────────
+    print("=" * 50)
+    print("[Bước 1] Đọc dữ liệu...")
+    try:
+        train_corpus, train_labels = load_split(TRAIN_CORPUS, TRAIN_LABELS)
+        val_corpus,   val_labels   = load_split(VAL_CORPUS,   VAL_LABELS)
+    except Exception as e:
+        print(f"Lỗi đọc file: {e}")
+        exit()
 
+    print(f"  Train : {len(train_corpus)} mẫu")
+    print(f"  Val   : {len(val_corpus)} mẫu  "
+          f"(trong đó oos: {sum(1 for l in val_labels if l == 'oos')})")
 
-    # TODO (Bước 3): Đọc dữ liệu train và val bằng hàm load_split()
-    # Gợi ý: Hàm này đã được import từ mrl.py ở đầu file.
-    #         Nó nhận 2 tham số là đường dẫn corpus và labels.
-    #         Ví dụ: train_corpus, train_labels = load_split(TRAIN_CORPUS, TRAIN_LABELS)
-    # ↓ Viết code của bạn ở đây ↓
+    # ── Bước 2: Vector hóa TF-IDF ─────────────────────────
+    print("\n[Bước 2] Vector hóa TF-IDF...")
+    vectorizer = TfIdfVectorizer()
+    X_train    = vectorizer.fit_transform(train_corpus)
+    X_val      = vectorizer.transform(val_corpus)
+    print(f"  Ma trận train: {X_train.shape}")
+    print(f"  Ma trận val  : {X_val.shape}")
 
+    # ── Bước 3: Mã hóa nhãn ───────────────────────────────
+    print("\n[Bước 3] Mã hóa nhãn...")
+    label_encoder = LabelEncoder()
+    y_train       = label_encoder.fit_transform(train_labels)
+    print(f"  Số class: {len(label_encoder.classes)}")
 
-    # TODO (Bước 4): Khởi tạo và fit TF-IDF Vectorizer trên tập train
-    # Gợi ý: vectorizer = TfIdfVectorizer()
-    #         X_train = vectorizer.fit_transform(train_corpus)
-    #         X_val   = vectorizer.transform(val_corpus)   ← dùng .transform() chứ không .fit_transform()
-    # ↓ Viết code của bạn ở đây ↓
+    # ── Bước 4: Huấn luyện ────────────────────────────────
+    print("\n[Bước 4] Huấn luyện mô hình Naive Bayes...")
+    model = MultinomialNaiveBayes(alpha=1.0)
+    model.fit(X_train, y_train)
 
+    # ── Bước 5: Đánh giá trên tập Validation ──────────────
+    print("\n[Bước 5] Đánh giá trên tập Validation:")
+    evaluate(model, vectorizer, label_encoder,
+             val_corpus, val_labels, threshold=0.5)
 
-    # TODO (Bước 5): Khởi tạo và fit LabelEncoder trên nhãn của tập train
-    # Gợi ý: label_encoder = LabelEncoder()
-    #         y_train = label_encoder.fit_transform(train_labels)
-    #         (chuyển nhãn chữ "lock_card" → số nguyên 42)
-    # ↓ Viết code của bạn ở đây ↓
-
-
-    # TODO (Bước 6): Khởi tạo mô hình và gọi hàm fit()
-    # Gợi ý: model = MultinomialNaiveBayes(alpha=1.0)
-    #         model.fit(X_train, y_train)
-    # ↓ Viết code của bạn ở đây ↓
-
-
-    # TODO (Bước 7): Đánh giá mô hình trên tập Validation
-    # Gợi ý: Gọi hàm evaluate() đã được định nghĩa trong file này.
-    #         evaluate(model, vectorizer, label_encoder, val_corpus, val_labels)
-    # ↓ Viết code của bạn ở đây ↓
-
-
-    # TODO (Bước 8): Lưu mô hình vào file .pkl bằng pickle
-    # Gợi ý: Xem cách đồng đội lưu ở cuối file mrl.py để tham khảo.
-    #         Tên file lưu là: MODEL_DIR / "NaiveBayes_model.pkl"
-    #         Lưu 3 thứ: "vectorizer", "label_encoder", "model"
-    # ↓ Viết code của bạn ở đây ↓
-
-    pass
+    # ── Bước 6: Lưu mô hình ───────────────────────────────
+    save_path = MODEL_DIR / "NaiveBayes_model.pkl"
+    with open(save_path, "wb") as f:
+        pickle.dump({
+            "vectorizer"   : vectorizer,
+            "label_encoder": label_encoder,
+            "model"        : model,
+        }, f)
+    print(f"\n[Thành công] Mô hình đã lưu tại: {save_path}")
