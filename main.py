@@ -8,85 +8,104 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 # ==========================================
 # 1. CẤU HÌNH ĐƯỜNG DẪN IMPORT TRÁNH LỖI
 # ==========================================
-ROOT_DIR = Path(__file__).resolve().parent
+ROOT_DIR     = Path(__file__).resolve().parent
 LOGISTIC_DIR = ROOT_DIR / "src" / "logistic-regression"
+NAIVE_DIR    = ROOT_DIR / "src" / "naive-bayes"
 
-# Thêm thư mục chứa mrl.py vào sys.path để pickle có thể tìm thấy class khi giải nén
-if str(LOGISTIC_DIR) not in sys.path:
-    sys.path.append(str(LOGISTIC_DIR))
+# Thêm cả hai thư mục vào sys.path để pickle có thể tìm thấy class khi giải nén
+for _dir in (LOGISTIC_DIR, NAIVE_DIR):
+    if str(_dir) not in sys.path:
+        sys.path.append(str(_dir))
 
 try:
     from mrl import TfIdfVectorizer, LabelEncoder, MultinomialLogisticRegression, MODEL_DIR, INPUT_DIR # type: ignore
 except ImportError as e:
-    print(f"Lỗi Import: {e}. Vui lòng kiểm tra lại đường dẫn thư mục src/logistic-regression/")
+    print(f"Lỗi Import mrl: {e}. Vui lòng kiểm tra thư mục src/logistic-regression/")
+    exit(1)
+
+try:
+    from mnb import MultinomialNaiveBayes  # type: ignore
+except ImportError as e:
+    print(f"Lỗi Import mnb: {e}. Vui lòng kiểm tra thư mục src/naive-bayes/")
     exit(1)
 
 # ==========================================
 # 2. CÁC HÀM TIỆN ÍCH LÕI
 # ==========================================
-def load_model():
-    save_path = MODEL_DIR / "LogisticRegression_model.pkl"
-    if not save_path.exists():
-        print(f"Không tìm thấy mô hình tại {save_path}. Bạn cần chạy train trước!")
+# Tên file và tên hiển thị tương ứng với từng loại model
+MODEL_FILES = {
+    "lr": ("LogisticRegression_model.pkl", "Logistic Regression"),
+    "nb": ("NaiveBayes_model.pkl",         "Naive Bayes"),
+}
+
+def load_model(model_type: str = "lr"):
+    """Tải mô hình đã lưu theo loại model_type ('lr' hoặc 'nb')."""
+    if model_type not in MODEL_FILES:
+        print(f"Loại mô hình '{model_type}' không hợp lệ. Chọn 'lr' hoặc 'nb'.")
         exit(1)
-        
+
+    filename, display_name = MODEL_FILES[model_type]
+    save_path = MODEL_DIR / filename
+
+    if not save_path.exists():
+        print(f"Không tìm thấy mô hình '{display_name}' tại {save_path}.")
+        print(f"Bạn cần chạy train trước (python src/{'logistic-regression/mrl.py' if model_type == 'lr' else 'naive-bayes/mnb.py'})!")
+        exit(1)
+
     with open(save_path, 'rb') as f:
         artifacts = pickle.load(f)
-    return artifacts['vectorizer'], artifacts['label_encoder'], artifacts['model']
+    return artifacts['vectorizer'], artifacts['label_encoder'], artifacts['model'], display_name
 
 # ==========================================
 # 3. CÁC CHỨC NĂNG CỦA CLI
 # ==========================================
-def run_predict(text, threshold):
+def run_predict(text, threshold, model_type):
     """Chế độ dự đoán 1 câu"""
-    vectorizer, label_encoder, model = load_model()
+    vectorizer, label_encoder, model, display_name = load_model(model_type)
     X = vectorizer.transform([text])
     preds, max_probs = model.predict_with_oos(X, threshold=threshold)
-    
-    # In ra đúng định dạng yêu cầu
+
     print(f"> {text}")
-    print(f"  Model     : Logistic Regression")
-    
+    print(f"  Model     : {display_name}")
+
     if preds[0] == -1:
         print(f"  Intent    : [OUT OF SCOPE]")
     else:
         label_text = label_encoder.inverse_transform([preds[0]])[0]
         print(f"  Intent    : {label_text}")
-        
+
     print(f"  Confidence: {max_probs[0]:.2f}\n")
 
 
-def run_chat(threshold):
+def run_chat(threshold, model_type):
     """Chế độ chat liên tục với model"""
-    vectorizer, label_encoder, model = load_model()
-    print("\n=== ĐÃ VÀO CHẾ ĐỘ CHAT (Gõ 'exit' hoặc 'quit' để thoát) ===\n")
-    
+    vectorizer, label_encoder, model, display_name = load_model(model_type)
+    print(f"\n=== ĐÃ VÀO CHẾ ĐỘ CHAT [{display_name}] (Gõ 'exit' hoặc 'quit' để thoát) ===\n")
+
     while True:
-        # Đổi prompt nhập từ "Bạn: " sang dấu "> "
         text = input("> ")
         if text.lower() in ['exit', 'quit']:
             print("Đã thoát chế độ chat.")
             break
-            
+
         X = vectorizer.transform([text])
         preds, probs = model.predict_with_oos(X, threshold=threshold)
-        
-        # In ra định dạng
-        print(f"  Model     : Logistic Regression")
+
+        print(f"  Model     : {display_name}")
         if preds[0] == -1:
             print(f"  Intent    : [OUT OF SCOPE]")
         else:
             label_text = label_encoder.inverse_transform([preds[0]])[0]
             print(f"  Intent    : {label_text}")
-            
+
         print(f"  Confidence: {probs[0]:.2f}\n")
 
-def run_eval():
+def run_eval(model_type):
     """Chế độ chạy test toàn bộ file dữ liệu (Metrics)"""
     TEST_CORPUS_PATH = INPUT_DIR / "test_corpus.txt"
     TEST_LABELS_PATH = INPUT_DIR / "test_labels.txt"
-    
-    vectorizer, label_encoder, model = load_model()
+
+    vectorizer, label_encoder, model, display_name = load_model(model_type)
     
     with open(TEST_CORPUS_PATH, 'r', encoding='utf-8') as f:
         raw_corpus = f.readlines()
@@ -121,6 +140,7 @@ def run_eval():
     print(f"{'KẾT QUẢ ĐÁNH GIÁ MÔ HÌNH (TEST METRICS)':^40}")
     print("="*40)
     avg_method = 'macro' if len(label_encoder.classes) > 2 else 'binary'
+    print(f"Mô hình          : {display_name}")
     print(f"Tổng số mẫu test : {len(y_test_true)}")
     print(f"Chế độ trung bình: {avg_method}\n")
     
@@ -141,21 +161,27 @@ if __name__ == "__main__":
     parser_predict = subparsers.add_parser("predict", help="Đoán nhãn cho 1 câu văn cụ thể")
     parser_predict.add_argument("text", type=str, help="Câu văn cần kiểm tra (đặt trong dấu ngoặc kép)")
     parser_predict.add_argument("-t", "--threshold", type=float, default=0.5, help="Ngưỡng tự tin (OOS Threshold)")
+    parser_predict.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb"],
+                                help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes (mặc định: lr)")
 
     # Command 2: Chế độ Chat
     parser_chat = subparsers.add_parser("chat", help="Mở chế độ chat liên tục để test")
     parser_chat.add_argument("-t", "--threshold", type=float, default=0.5, help="Ngưỡng tự tin (OOS Threshold)")
+    parser_chat.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb"],
+                             help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes (mặc định: lr)")
 
     # Command 3: Đánh giá mô hình
     parser_eval = subparsers.add_parser("eval", help="Chạy đánh giá toàn bộ trên tập test_corpus.txt")
+    parser_eval.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb"],
+                             help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes (mặc định: lr)")
 
     args = parser.parse_args()
 
     if args.command == "predict":
-        run_predict(args.text, args.threshold)
+        run_predict(args.text, args.threshold, args.model)
     elif args.command == "chat":
-        run_chat(args.threshold)
+        run_chat(args.threshold, args.model)
     elif args.command == "eval":
-        run_eval()
+        run_eval(args.model)
     else:
         parser.print_help()
