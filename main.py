@@ -32,7 +32,6 @@ except ImportError as e:
 # ==========================================
 # 2. CÁC HÀM TIỆN ÍCH LÕI
 # ==========================================
-# Tên file và tên hiển thị tương ứng với từng loại model
 MODEL_FILES = {
     "lr": ("LogisticRegression_model.pkl", "Logistic Regression"),
     "nb": ("NaiveBayes_model.pkl",         "Naive Bayes"),
@@ -49,7 +48,7 @@ def load_model(model_type: str = "lr"):
 
     if not save_path.exists():
         print(f"Không tìm thấy mô hình '{display_name}' tại {save_path}.")
-        print(f"Bạn cần chạy train trước (python src/{'logistic-regression/mrl.py' if model_type == 'lr' else 'naive-bayes/mnb.py'})!")
+        print(f"Bạn cần chạy train trước!")
         exit(1)
 
     with open(save_path, 'rb') as f:
@@ -78,27 +77,59 @@ def run_predict(text, threshold, model_type):
 
 
 def run_chat(threshold, model_type):
-    """Chế độ chat liên tục với model"""
-    vectorizer, label_encoder, model, display_name = load_model(model_type)
-    print(f"\n=== ĐÃ VÀO CHẾ ĐỘ CHAT [{display_name}] (Gõ 'exit' hoặc 'quit' để thoát) ===\n")
+    """Chế độ chat: Hiển thị bảng ngang khi so sánh 'all', hoặc khối dọc nếu test 1 model"""
+    
+    # Nếu không truyền param, mặc định là 'all' -> load cả 2 mô hình
+    models_to_run = ["lr", "nb"] if model_type == "all" else [model_type]
+    loaded_models = []
+    
+    for m in models_to_run:
+        vec, enc, mod, name = load_model(m)
+        loaded_models.append({
+            "vectorizer": vec,
+            "encoder": enc,
+            "model": mod,
+            "name": name
+        })
+
+    print(f"\n=== ĐÃ VÀO CHẾ ĐỘ CHAT (Gõ 'exit' hoặc 'quit' để thoát) ===\n")
 
     while True:
         text = input("> ")
         if text.lower() in ['exit', 'quit']:
             print("Đã thoát chế độ chat.")
             break
+        
+        if not text.strip():
+            continue
 
-        X = vectorizer.transform([text])
-        preds, probs = model.predict_with_oos(X, threshold=threshold)
+        # NẾU CÓ NHIỀU MÔ HÌNH: IN DƯỚI DẠNG BẢNG NGANG
+        if len(loaded_models) > 1:
+            print("-" * 65)
+            print(f"| {'Model':<20} | {'Intent':<22} | {'Confidence':<12} |")
+            print("-" * 65)
+            for item in loaded_models:
+                X = item["vectorizer"].transform([text])
+                preds, probs = item["model"].predict_with_oos(X, threshold=threshold)
 
-        print(f"  Model     : {display_name}")
-        if preds[0] == -1:
-            print(f"  Intent    : [OUT OF SCOPE]")
+                intent = "[OUT OF SCOPE]" if preds[0] == -1 else item["encoder"].inverse_transform([preds[0]])[0]
+                conf = probs[0]
+
+                print(f"| {item['name']:<20} | {intent:<22} | {conf:<12.2f} |")
+            print("-" * 65 + "\n")
+            
+        # NẾU CHỈ CÓ 1 MÔ HÌNH: IN KHỐI DỌC BÌNH THƯỜNG
         else:
-            label_text = label_encoder.inverse_transform([preds[0]])[0]
-            print(f"  Intent    : {label_text}")
+            item = loaded_models[0]
+            X = item["vectorizer"].transform([text])
+            preds, probs = item["model"].predict_with_oos(X, threshold=threshold)
+            
+            intent = "[OUT OF SCOPE]" if preds[0] == -1 else item["encoder"].inverse_transform([preds[0]])[0]
+            conf = probs[0]
 
-        print(f"  Confidence: {probs[0]:.2f}\n")
+            print(f"  Model     : {item['name']}")
+            print(f"  Intent    : {intent}")
+            print(f"  Confidence: {conf:.2f}\n")
 
 def run_eval(model_type):
     """Chế độ chạy test toàn bộ file dữ liệu (Metrics)"""
@@ -164,11 +195,11 @@ if __name__ == "__main__":
     parser_predict.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb"],
                                 help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes (mặc định: lr)")
 
-    # Command 2: Chế độ Chat
+    # Command 2: Chế độ Chat (Mặc định 'all' để hiện bảng kẻ ngang)
     parser_chat = subparsers.add_parser("chat", help="Mở chế độ chat liên tục để test")
     parser_chat.add_argument("-t", "--threshold", type=float, default=0.5, help="Ngưỡng tự tin (OOS Threshold)")
-    parser_chat.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb"],
-                             help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes (mặc định: lr)")
+    parser_chat.add_argument("-m", "--model", type=str, default="all", choices=["lr", "nb", "all"],
+                             help="Chọn mô hình: 'lr', 'nb', hoặc 'all' để so sánh (mặc định: all)")
 
     # Command 3: Đánh giá mô hình
     parser_eval = subparsers.add_parser("eval", help="Chạy đánh giá toàn bộ trên tập test_corpus.txt")
