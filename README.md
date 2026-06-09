@@ -10,13 +10,15 @@ Dự án này phục vụ mục đích học tập và nghiên cứu liên quan 
   - `src/preprocess/`: Modules xử lý dữ liệu như loại bỏ stopword ([`stopword_remove.py`](src/preprocess/stopword_remove.py)), pipeline tiền xử lý ([`preprocess_pipeline.py`](src/preprocess/preprocess_pipeline.py)).
   - `src/logistic-regression/`: Bộ phân loại sử dụng Logistic Regression ([`mrl.py`](src/logistic-regression/mrl.py)).
   - `src/naive-bayes/`: Bộ phân loại sử dụng Multinomial Naive Bayes ([`mnb.py`](src/naive-bayes/mnb.py)).
-  - `src/model/`: Nơi lưu trữ các mô hình đã được huấn luyện (VD: `LogisticRegression_model.pkl`, `NaiveBayes_model.pkl`).
+  - `src/decision-tree/`: Bộ phân loại sử dụng Decision Tree ([`mdt.py`](src/decision-tree/mdt.py)).
+  - `src/model/`: Nơi lưu trữ các mô hình đã được huấn luyện (VD: `LogisticRegression_model.pkl`, `NaiveBayes_model.pkl`, `DecisionTree_model.pkl`).
 
 ## Tính năng
 - **Tiền xử lý dữ liệu**: Xử lý dữ liệu văn bản thô, làm sạch, loại bỏ stopwords thông qua module [preprocess_pipeline.py](src/preprocess/preprocess_pipeline.py).
 - **Huấn luyện Mô hình**: Hỗ trợ huấn luyện và so sánh hai thuật toán Machine Learning:
   - **Logistic Regression** (`src/logistic-regression/mrl.py`)
   - **Multinomial Naive Bayes** (`src/naive-bayes/mnb.py`)
+  - **Decesion Tree** (`src/decision-tree/mdt.py`)
 - **Đánh giá Mô hình**: Kiểm tra và đánh giá độ chính xác của mô hình trên tập dữ liệu kiểm thử (Test set) với các chỉ số Accuracy, Precision, Recall, F1-Score.
 - **Phát hiện câu ngoài phạm vi (OOS)**: Cả hai mô hình đều hỗ trợ từ chối trả lời khi câu hỏi không thuộc 150 ý định đã học.
 
