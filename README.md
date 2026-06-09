@@ -56,12 +56,16 @@ python src/logistic-regression/mrl.py
 
 # Huấn luyện Naive Bayes
 python src/naive-bayes/mnb.py
+
+# Huấn luyện Decision 
+python src/decision-tree/mdt.py
 ```
 
 ### Bước 1: Chạy chương trình
 Tất cả các lệnh đều hỗ trợ tham số `-m` (hoặc `--model`) để chọn mô hình:
 - `-m lr` : Logistic Regression (mặc định)
 - `-m nb` : Naive Bayes
+- `-m dt` : Decision Tree
 
 #### `chat` — Mở chế độ tương tác liên tục
 Người dùng nhập câu liên tục, mô hình trả về kết quả dự đoán. Gõ `exit` hoặc `quit` để thoát.
