@@ -11,9 +11,10 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 ROOT_DIR     = Path(__file__).resolve().parent
 LOGISTIC_DIR = ROOT_DIR / "src" / "logistic-regression"
 NAIVE_DIR    = ROOT_DIR / "src" / "naive-bayes"
+DECISION_DIR = ROOT_DIR / "src" / "decision-tree"
 
-# Thêm cả hai thư mục vào sys.path để pickle có thể tìm thấy class khi giải nén
-for _dir in (LOGISTIC_DIR, NAIVE_DIR):
+# Thêm cả ba thư mục vào sys.path để pickle có thể tìm thấy class khi giải nén
+for _dir in (LOGISTIC_DIR, NAIVE_DIR, DECISION_DIR):
     if str(_dir) not in sys.path:
         sys.path.append(str(_dir))
 
@@ -29,18 +30,30 @@ except ImportError as e:
     print(f"Lỗi Import mnb: {e}. Vui lòng kiểm tra thư mục src/naive-bayes/")
     exit(1)
 
+try:
+    # Đã sửa đổi để import đúng class cây phân cấp mới
+    from mdt import HierarchicalDecisionTree  # type: ignore
+except ImportError as e:
+    print(f"Lỗi Import mdt: {e}. Vui lòng kiểm tra thư mục src/decision-tree/")
+    exit(1)
+
+# Hỗ trợ nạp module ảo chéo để pickle không bị lỗi "AttributeError: Can't get attribute"
+import mdt
+sys.modules['mdt'] = mdt
+
 # ==========================================
 # 2. CÁC HÀM TIỆN ÍCH LÕI
 # ==========================================
 MODEL_FILES = {
     "lr": ("LogisticRegression_model.pkl", "Logistic Regression"),
     "nb": ("NaiveBayes_model.pkl",         "Naive Bayes"),
+    "dt": ("DecisionTree_model.pkl",       "Decision Tree"),
 }
 
 def load_model(model_type: str = "lr"):
-    """Tải mô hình đã lưu theo loại model_type ('lr' hoặc 'nb')."""
+    """Tải mô hình đã lưu theo loại model_type ('lr', 'nb', hoặc 'dt')."""
     if model_type not in MODEL_FILES:
-        print(f"Loại mô hình '{model_type}' không hợp lệ. Chọn 'lr' hoặc 'nb'.")
+        print(f"Loại mô hình '{model_type}' không hợp lệ. Chọn 'lr', 'nb', hoặc 'dt'.")
         exit(1)
 
     filename, display_name = MODEL_FILES[model_type]
@@ -48,6 +61,12 @@ def load_model(model_type: str = "lr"):
 
     if not save_path.exists():
         print(f"Không tìm thấy mô hình '{display_name}' tại {save_path}.")
+        train_scripts = {
+            "lr": "logistic-regression/mrl.py",
+            "nb": "naive-bayes/mnb.py",
+            "dt": "decision-tree/mdt.py"
+        }
+        print(f"Bạn cần chạy train trước (python src/{train_scripts[model_type]})!")
         print(f"Bạn cần chạy train trước!")
         exit(1)
 
@@ -67,16 +86,21 @@ def run_predict(text, threshold, model_type):
     print(f"> {text}")
     print(f"  Model     : {display_name}")
 
+    # Bẫy lỗi chống KeyError -1 khi nghịch đảo nhãn OOS
     if preds[0] == -1:
         print(f"  Intent    : [OUT OF SCOPE]")
     else:
-        label_text = label_encoder.inverse_transform([preds[0]])[0]
+        label_text = label_encoder.index_to_label.get(preds[0], "[OUT OF SCOPE]")
         print(f"  Intent    : {label_text}")
 
     print(f"  Confidence: {max_probs[0]:.2f}\n")
 
 
 def run_chat(threshold, model_type):
+    """Chế độ chat liên tục với model"""
+    vectorizer, label_encoder, model, display_name = load_model(model_type)
+    print(f"\n=== ĐÃ VÀO CHẾ ĐỘ CHAT [{display_name}] (Gõ 'exit' hoặc 'quit' để thoát) ===")
+    print(f"=== Ngưỡng lọc OOS hiện tại: {threshold} ===\n")
     """Chế độ chat: Hiển thị bảng ngang khi so sánh 'all', hoặc khối dọc nếu test 1 model"""
     
     # Nếu không truyền param, mặc định là 'all' -> load cả 2 mô hình
@@ -112,6 +136,11 @@ def run_chat(threshold, model_type):
                 X = item["vectorizer"].transform([text])
                 preds, probs = item["model"].predict_with_oos(X, threshold=threshold)
 
+        print(f"  Model     : {display_name}")
+        
+        # Bẫy lỗi chống KeyError -1 khi nghịch đảo nhãn OOS
+        if preds[0] == -1:
+            print(f"  Intent    : [OUT OF SCOPE]")
                 intent = "[OUT OF SCOPE]" if preds[0] == -1 else item["encoder"].inverse_transform([preds[0]])[0]
                 conf = probs[0]
 
@@ -120,6 +149,10 @@ def run_chat(threshold, model_type):
             
         # NẾU CHỈ CÓ 1 MÔ HÌNH: IN KHỐI DỌC BÌNH THƯỜNG
         else:
+            label_text = label_encoder.index_to_label.get(preds[0], "[OUT OF SCOPE]")
+            print(f"  Intent    : {label_text}")
+
+        print(f"  Confidence: {probs[0]:.2f}\n")
             item = loaded_models[0]
             X = item["vectorizer"].transform([text])
             preds, probs = item["model"].predict_with_oos(X, threshold=threshold)
@@ -165,7 +198,11 @@ def run_eval(model_type):
     if skipped > 0:
         print(f"⚠️ Bỏ qua {skipped} mẫu có nhãn lạ chưa xuất hiện lúc Train.")
         
-    y_test_pred = model.predict(X_test)
+    # Đồng bộ hóa cơ chế dự đoán cho cả mô hình phẳng lẫn mô hình cây phân cấp phân tách OOS
+    if hasattr(model, "predict_with_oos"):
+        y_test_pred, _ = model.predict_with_oos(X_test, threshold=0.0) # threshold=0.0 lấy dự đoán in-scope tối ưu nhất
+    else:
+        y_test_pred = model.predict(X_test)
     
     print("\n" + "="*40)
     print(f"{'KẾT QUẢ ĐÁNH GIÁ MÔ HÌNH (TEST METRICS)':^40}")
@@ -191,27 +228,40 @@ if __name__ == "__main__":
     # Command 1: Dự đoán 1 câu
     parser_predict = subparsers.add_parser("predict", help="Đoán nhãn cho 1 câu văn cụ thể")
     parser_predict.add_argument("text", type=str, help="Câu văn cần kiểm tra (đặt trong dấu ngoặc kép)")
-    parser_predict.add_argument("-t", "--threshold", type=float, default=0.5, help="Ngưỡng tự tin (OOS Threshold)")
-    parser_predict.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb"],
-                                help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes (mặc định: lr)")
+    parser_predict.add_argument("-t", "--threshold", type=float, default=None, 
+                                help="Ngưỡng tự tin (OOS Threshold). Mặc định: 0.5 cho LR/NB, 0.35 cho DT")
+    parser_predict.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb", "dt"],
+                                help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes, 'dt' = Decision Tree (mặc định: lr)")
 
     # Command 2: Chế độ Chat (Mặc định 'all' để hiện bảng kẻ ngang)
     parser_chat = subparsers.add_parser("chat", help="Mở chế độ chat liên tục để test")
+    parser_chat.add_argument("-t", "--threshold", type=float, default=None, 
+                             help="Ngưỡng tự tin (OOS Threshold). Mặc định: 0.5 cho LR/NB, 0.35 cho DT")
+    parser_chat.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb", "dt"],
+                             help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes, 'dt' = Decision Tree (mặc định: lr)")
     parser_chat.add_argument("-t", "--threshold", type=float, default=0.5, help="Ngưỡng tự tin (OOS Threshold)")
     parser_chat.add_argument("-m", "--model", type=str, default="all", choices=["lr", "nb", "all"],
                              help="Chọn mô hình: 'lr', 'nb', hoặc 'all' để so sánh (mặc định: all)")
 
     # Command 3: Đánh giá mô hình
     parser_eval = subparsers.add_parser("eval", help="Chạy đánh giá toàn bộ trên tập test_corpus.txt")
-    parser_eval.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb"],
-                             help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes (mặc định: lr)")
+    parser_eval.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb", "dt"],
+                             help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes, 'dt' = Decision Tree (mặc định: lr)")
 
     args = parser.parse_args()
 
+    # Xử lý tự động gán ngưỡng threshold tối ưu nếu người dùng để trống (None)
+    current_threshold = args.threshold
+    if current_threshold is None:
+        if hasattr(args, "model") and args.model == "dt":
+            current_threshold = 0.35  # Giữ nguyên cấu hình tối ưu mượt của cây phân cấp
+        else:
+            current_threshold = 0.5   # Ngưỡng chuẩn cho LR và NB
+
     if args.command == "predict":
-        run_predict(args.text, args.threshold, args.model)
+        run_predict(args.text, current_threshold, args.model)
     elif args.command == "chat":
-        run_chat(args.threshold, args.model)
+        run_chat(current_threshold, args.model)
     elif args.command == "eval":
         run_eval(args.model)
     else:
