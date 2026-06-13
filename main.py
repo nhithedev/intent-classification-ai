@@ -5,263 +5,309 @@ import numpy as np
 from pathlib import Path
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
+# Fix encoding tiếng Việt trên Windows PowerShell (cp1258 không hỗ trợ Unicode)
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 # ==========================================
-# 1. CẤU HÌNH ĐƯỜNG DẪN IMPORT TRÁNH LỖI
+# 1. CẤU HÌNH ĐƯỜNG DẪN IMPORT
 # ==========================================
 ROOT_DIR     = Path(__file__).resolve().parent
+UTILS_DIR    = ROOT_DIR / "src" / "utils"
 LOGISTIC_DIR = ROOT_DIR / "src" / "logistic-regression"
 NAIVE_DIR    = ROOT_DIR / "src" / "naive-bayes"
 DECISION_DIR = ROOT_DIR / "src" / "decision-tree"
+KNN_DIR      = ROOT_DIR / "src" / "k-nearest-neighbor"
+RF_DIR       = ROOT_DIR / "src" / "random-forest"
 
-# Thêm cả ba thư mục vào sys.path để pickle có thể tìm thấy class khi giải nén
-for _dir in (LOGISTIC_DIR, NAIVE_DIR, DECISION_DIR):
+# Thêm utils/ + 5 thư mục model vào sys.path để pickle tìm thấy class khi giải nén
+for _dir in (UTILS_DIR, LOGISTIC_DIR, NAIVE_DIR, DECISION_DIR, KNN_DIR, RF_DIR):
     if str(_dir) not in sys.path:
         sys.path.append(str(_dir))
 
+# Thư viện chung trong src/utils/ — nguồn TfIdfVectorizer / LabelEncoder / đường dẫn.
+# (import tfidfcal & labelEncode còn để pickle.load nhận diện class của vectorizer.)
 try:
-    from mrl import TfIdfVectorizer, LabelEncoder, MultinomialLogisticRegression, MODEL_DIR, INPUT_DIR # type: ignore
+    from tfidfcal import TfIdfVectorizer     # type: ignore  # noqa: F401
+    from labelEncode import LabelEncoder     # type: ignore  # noqa: F401
+    from dataio import MODEL_DIR, INPUT_DIR  # type: ignore
 except ImportError as e:
-    print(f"Lỗi Import mrl: {e}. Vui lòng kiểm tra thư mục src/logistic-regression/")
+    print(f"Lỗi Import thư viện chung từ src/utils/: {e}")
+    exit(1)
+
+try:
+    from mrl import MultinomialLogisticRegression  # type: ignore  # noqa: F401
+except ImportError as e:
+    print(f"Lỗi Import mrl: {e}. Kiểm tra thư mục src/logistic-regression/")
     exit(1)
 
 try:
     from mnb import MultinomialNaiveBayes  # type: ignore
 except ImportError as e:
-    print(f"Lỗi Import mnb: {e}. Vui lòng kiểm tra thư mục src/naive-bayes/")
+    print(f"Lỗi Import mnb: {e}. Kiểm tra thư mục src/naive-bayes/")
     exit(1)
 
 try:
-    # Đã sửa đổi để import đúng class cây phân cấp mới
     from mdt import HierarchicalDecisionTree  # type: ignore
 except ImportError as e:
-    print(f"Lỗi Import mdt: {e}. Vui lòng kiểm tra thư mục src/decision-tree/")
+    print(f"Lỗi Import mdt: {e}. Kiểm tra thư mục src/decision-tree/")
     exit(1)
 
-# Hỗ trợ nạp module ảo chéo để pickle không bị lỗi "AttributeError: Can't get attribute"
+try:
+    from mknn import KNearestNeighbors  # type: ignore
+except ImportError as e:
+    print(f"Lỗi Import mknn: {e}. Kiểm tra thư mục src/k-nearest-neighbor/")
+    exit(1)
+
+try:
+    from mrf import RandomForest  # type: ignore
+except ImportError as e:
+    print(f"Lỗi Import mrf: {e}. Kiểm tra thư mục src/random-forest/")
+    exit(1)
+
+# Đăng ký module ảo để pickle không lỗi "Can't get attribute".
+# Các model được train bằng cách chạy file trực tiếp (python mdt.py / mknn.py)
+# nên class được pickle dưới module '__main__'. Việc import ở trên đã đưa class
+# vào namespace của main.py (chính là __main__) → pickle.load tìm thấy.
 import mdt
-sys.modules['mdt'] = mdt
+import mknn
+import mrf
+sys.modules['mdt']  = mdt
+sys.modules['mknn'] = mknn
+sys.modules['mrf']  = mrf
 
 # ==========================================
 # 2. CÁC HÀM TIỆN ÍCH LÕI
 # ==========================================
+# (filename, tên hiển thị, ngưỡng OOS mặc định riêng của từng model)
 MODEL_FILES = {
-    "lr": ("LogisticRegression_model.pkl", "Logistic Regression"),
-    "nb": ("NaiveBayes_model.pkl",         "Naive Bayes"),
-    "dt": ("DecisionTree_model.pkl",       "Decision Tree"),
+    "lr":  ("LogisticRegression_model.pkl", "Logistic Regression", 0.50),
+    "nb":  ("NaiveBayes_model.pkl",         "Naive Bayes",         0.50),
+    "dt":  ("DecisionTree_model.pkl",       "Decision Tree",       0.35),
+    "knn": ("KNN_model.pkl",                "K-Nearest Neighbors", 0.30),
+    "rf":  ("RandomForest_model.pkl",       "Random Forest",       0.15),
 }
 
+# Thứ tự hiển thị khi chạy chế độ "all"
+ALL_MODELS = ["lr", "nb", "dt", "knn", "rf"]
+
+TRAIN_SCRIPTS = {
+    "lr":  "logistic-regression/mrl.py",
+    "nb":  "naive-bayes/mnb.py",
+    "dt":  "decision-tree/mdt.py",
+    "knn": "k-nearest-neighbor/mknn.py",
+    "rf":  "random-forest/mrf.py",
+}
+
+
+def default_threshold(model_type: str) -> float:
+    """Ngưỡng OOS mặc định riêng cho từng model."""
+    return MODEL_FILES[model_type][2]
+
+
 def load_model(model_type: str = "lr"):
-    """Tải mô hình đã lưu theo loại model_type ('lr', 'nb', hoặc 'dt')."""
+    """Tải mô hình đã lưu. Trả về (vectorizer, label_encoder, model, display_name)."""
     if model_type not in MODEL_FILES:
-        print(f"Loại mô hình '{model_type}' không hợp lệ. Chọn 'lr', 'nb', hoặc 'dt'.")
+        print(f"Loại mô hình '{model_type}' không hợp lệ. Chọn: {', '.join(MODEL_FILES)}.")
         exit(1)
 
-    filename, display_name = MODEL_FILES[model_type]
+    filename, display_name, _ = MODEL_FILES[model_type]
     save_path = MODEL_DIR / filename
 
     if not save_path.exists():
         print(f"Không tìm thấy mô hình '{display_name}' tại {save_path}.")
-        train_scripts = {
-            "lr": "logistic-regression/mrl.py",
-            "nb": "naive-bayes/mnb.py",
-            "dt": "decision-tree/mdt.py"
-        }
-        print(f"Bạn cần chạy train trước (python src/{train_scripts[model_type]})!")
-        print(f"Bạn cần chạy train trước!")
+        print(f"Bạn cần chạy train trước: python src/{TRAIN_SCRIPTS[model_type]}")
         exit(1)
 
     with open(save_path, 'rb') as f:
         artifacts = pickle.load(f)
     return artifacts['vectorizer'], artifacts['label_encoder'], artifacts['model'], display_name
 
+
+def predict_one(item: dict, text: str):
+    """Dự đoán 1 câu với 1 model đã load. Trả về (intent_text, confidence)."""
+    X = item["vectorizer"].transform([text])
+    preds, probs = item["model"].predict_with_oos(X, threshold=item["threshold"])
+    if preds[0] == -1:
+        intent = "[OUT OF SCOPE]"
+    else:
+        intent = item["encoder"].index_to_label.get(preds[0], "[OUT OF SCOPE]")
+    return intent, float(probs[0])
+
+
+def load_many(model_keys, threshold):
+    """Load nhiều model. threshold=None → mỗi model dùng ngưỡng mặc định riêng."""
+    loaded = []
+    for m in model_keys:
+        vec, enc, mod, name = load_model(m)
+        loaded.append({
+            "key": m,
+            "vectorizer": vec,
+            "encoder": enc,
+            "model": mod,
+            "name": name,
+            "threshold": threshold if threshold is not None else default_threshold(m),
+        })
+    return loaded
+
+
 # ==========================================
 # 3. CÁC CHỨC NĂNG CỦA CLI
 # ==========================================
 def run_predict(text, threshold, model_type):
-    """Chế độ dự đoán 1 câu"""
-    vectorizer, label_encoder, model, display_name = load_model(model_type)
-    X = vectorizer.transform([text])
-    preds, max_probs = model.predict_with_oos(X, threshold=threshold)
-
+    """Chế độ dự đoán 1 câu (1 model, hoặc tất cả nếu model_type='all')."""
+    keys = ALL_MODELS if model_type == "all" else [model_type]
+    loaded = load_many(keys, threshold)
     print(f"> {text}")
-    print(f"  Model     : {display_name}")
-
-    # Bẫy lỗi chống KeyError -1 khi nghịch đảo nhãn OOS
-    if preds[0] == -1:
-        print(f"  Intent    : [OUT OF SCOPE]")
+    if len(loaded) > 1:
+        _print_table(loaded, text)
     else:
-        label_text = label_encoder.index_to_label.get(preds[0], "[OUT OF SCOPE]")
-        print(f"  Intent    : {label_text}")
+        intent, conf = predict_one(loaded[0], text)
+        print(f"  Model     : {loaded[0]['name']}")
+        print(f"  Intent    : {intent}")
+        print(f"  Confidence: {conf:.2f}\n")
 
-    print(f"  Confidence: {max_probs[0]:.2f}\n")
+
+def _print_table(loaded, text):
+    """In bảng so sánh kết quả nhiều model cho cùng 1 câu."""
+    line = "-" * 68
+    print(line)
+    print(f"| {'Model':<22} | {'Intent':<24} | {'Confidence':<10} |")
+    print(line)
+    for item in loaded:
+        intent, conf = predict_one(item, text)
+        print(f"| {item['name']:<22} | {intent:<24} | {conf:<10.2f} |")
+    print(line + "\n")
 
 
 def run_chat(threshold, model_type):
-    """Chế độ chat liên tục với model"""
-    vectorizer, label_encoder, model, display_name = load_model(model_type)
-    print(f"\n=== ĐÃ VÀO CHẾ ĐỘ CHAT [{display_name}] (Gõ 'exit' hoặc 'quit' để thoát) ===")
-    print(f"=== Ngưỡng lọc OOS hiện tại: {threshold} ===\n")
-    """Chế độ chat: Hiển thị bảng ngang khi so sánh 'all', hoặc khối dọc nếu test 1 model"""
-    
-    # Nếu không truyền param, mặc định là 'all' -> load cả 2 mô hình
-    models_to_run = ["lr", "nb"] if model_type == "all" else [model_type]
-    loaded_models = []
-    
-    for m in models_to_run:
-        vec, enc, mod, name = load_model(m)
-        loaded_models.append({
-            "vectorizer": vec,
-            "encoder": enc,
-            "model": mod,
-            "name": name
-        })
+    """Chế độ chat liên tục. Mặc định model_type='all' → hiện cả 4 model cùng lúc."""
+    keys = ALL_MODELS if model_type == "all" else [model_type]
+    loaded = load_many(keys, threshold)
 
-    print(f"\n=== ĐÃ VÀO CHẾ ĐỘ CHAT (Gõ 'exit' hoặc 'quit' để thoát) ===\n")
+    names = ", ".join(item["name"] for item in loaded)
+    print(f"\n=== ĐÃ VÀO CHẾ ĐỘ CHAT — {names} ===")
+    thr_info = "ngưỡng mặc định riêng từng model" if threshold is None else f"ngưỡng chung = {threshold}"
+    print(f"=== OOS threshold: {thr_info} | Gõ 'exit'/'quit' để thoát ===\n")
 
     while True:
-        text = input("> ")
-        if text.lower() in ['exit', 'quit']:
+        try:
+            text = input("> ")
+        except (EOFError, KeyboardInterrupt):
+            print("\nĐã thoát chế độ chat.")
+            break
+        if text.lower() in ('exit', 'quit'):
             print("Đã thoát chế độ chat.")
             break
-        
         if not text.strip():
             continue
 
-        # NẾU CÓ NHIỀU MÔ HÌNH: IN DƯỚI DẠNG BẢNG NGANG
-        if len(loaded_models) > 1:
-            print("-" * 65)
-            print(f"| {'Model':<20} | {'Intent':<22} | {'Confidence':<12} |")
-            print("-" * 65)
-            for item in loaded_models:
-                X = item["vectorizer"].transform([text])
-                preds, probs = item["model"].predict_with_oos(X, threshold=threshold)
-
-        print(f"  Model     : {display_name}")
-        
-        # Bẫy lỗi chống KeyError -1 khi nghịch đảo nhãn OOS
-        if preds[0] == -1:
-            print(f"  Intent    : [OUT OF SCOPE]")
-                intent = "[OUT OF SCOPE]" if preds[0] == -1 else item["encoder"].inverse_transform([preds[0]])[0]
-                conf = probs[0]
-
-                print(f"| {item['name']:<20} | {intent:<22} | {conf:<12.2f} |")
-            print("-" * 65 + "\n")
-            
-        # NẾU CHỈ CÓ 1 MÔ HÌNH: IN KHỐI DỌC BÌNH THƯỜNG
+        if len(loaded) > 1:
+            _print_table(loaded, text)
         else:
-            label_text = label_encoder.index_to_label.get(preds[0], "[OUT OF SCOPE]")
-            print(f"  Intent    : {label_text}")
-
-        print(f"  Confidence: {probs[0]:.2f}\n")
-            item = loaded_models[0]
-            X = item["vectorizer"].transform([text])
-            preds, probs = item["model"].predict_with_oos(X, threshold=threshold)
-            
-            intent = "[OUT OF SCOPE]" if preds[0] == -1 else item["encoder"].inverse_transform([preds[0]])[0]
-            conf = probs[0]
-
-            print(f"  Model     : {item['name']}")
+            intent, conf = predict_one(loaded[0], text)
+            print(f"  Model     : {loaded[0]['name']}")
             print(f"  Intent    : {intent}")
             print(f"  Confidence: {conf:.2f}\n")
 
+
 def run_eval(model_type):
-    """Chế độ chạy test toàn bộ file dữ liệu (Metrics)"""
+    """Chế độ đánh giá toàn bộ test set (Metrics). model_type='all' → chạy lần lượt cả 4."""
+    keys = ALL_MODELS if model_type == "all" else [model_type]
+    for m in keys:
+        _eval_one(m)
+
+
+def _eval_one(model_type):
     TEST_CORPUS_PATH = INPUT_DIR / "test_corpus.txt"
     TEST_LABELS_PATH = INPUT_DIR / "test_labels.txt"
 
     vectorizer, label_encoder, model, display_name = load_model(model_type)
-    
+
     with open(TEST_CORPUS_PATH, 'r', encoding='utf-8') as f:
         raw_corpus = f.readlines()
     with open(TEST_LABELS_PATH, 'r', encoding='utf-8') as f:
         raw_labels = f.readlines()
-        
-    min_len = min(len(raw_corpus), len(raw_labels))
-    test_corpus = [line.strip() for line in raw_corpus[:min_len] if line.strip()]
-    test_labels_text = [line.strip() for line in raw_labels[:min_len] if line.strip()]
 
-    print("[Tiến trình] Lọc mẫu hợp lệ & Mã hóa TF-IDF...")
-    filtered_corpus = []
-    y_test_true = []
-    skipped = 0
-    
+    min_len = min(len(raw_corpus), len(raw_labels))
+    test_corpus = [l.strip() for l in raw_corpus[:min_len]]
+    test_labels_text = [l.strip() for l in raw_labels[:min_len]]
+
+    filtered_corpus, y_test_true, skipped = [], [], 0
     for text, lbl in zip(test_corpus, test_labels_text):
+        if not text or not lbl:
+            continue
         if lbl in label_encoder.label_to_index:
             filtered_corpus.append(text)
             y_test_true.append(label_encoder.label_to_index[lbl])
         else:
             skipped += 1
-            
+
     y_test_true = np.array(y_test_true)
     X_test = vectorizer.transform(filtered_corpus)
-    
     if skipped > 0:
-        print(f"⚠️ Bỏ qua {skipped} mẫu có nhãn lạ chưa xuất hiện lúc Train.")
-        
-    # Đồng bộ hóa cơ chế dự đoán cho cả mô hình phẳng lẫn mô hình cây phân cấp phân tách OOS
+        print(f"[{display_name}] Bỏ qua {skipped} mẫu có nhãn lạ (vd: 'oos') chưa thấy lúc train.")
+
+    # threshold=0.0 → lấy dự đoán in-scope thô (không lọc OOS), đo phân loại thuần
     if hasattr(model, "predict_with_oos"):
-        y_test_pred, _ = model.predict_with_oos(X_test, threshold=0.0) # threshold=0.0 lấy dự đoán in-scope tối ưu nhất
+        y_test_pred, _ = model.predict_with_oos(X_test, threshold=0.0)
     else:
         y_test_pred = model.predict(X_test)
-    
-    print("\n" + "="*40)
-    print(f"{'KẾT QUẢ ĐÁNH GIÁ MÔ HÌNH (TEST METRICS)':^40}")
-    print("="*40)
+
     avg_method = 'macro' if len(label_encoder.classes) > 2 else 'binary'
+    print("\n" + "=" * 40)
+    print(f"{'KẾT QUẢ ĐÁNH GIÁ (TEST METRICS)':^40}")
+    print("=" * 40)
     print(f"Mô hình          : {display_name}")
     print(f"Tổng số mẫu test : {len(y_test_true)}")
     print(f"Chế độ trung bình: {avg_method}\n")
-    
     print(f"{'Accuracy':<15}: {accuracy_score(y_test_true, y_test_pred):.4f}")
     print(f"{'Precision':<15}: {precision_score(y_test_true, y_test_pred, average=avg_method, zero_division=0):.4f}")
     print(f"{'Recall':<15}: {recall_score(y_test_true, y_test_pred, average=avg_method, zero_division=0):.4f}")
     print(f"{'F1-Score':<15}: {f1_score(y_test_true, y_test_pred, average=avg_method, zero_division=0):.4f}")
-    print("="*40)
+    print("=" * 40)
+
 
 # ==========================================
-# 4. ENTRY POINT & PARSER CẤU HÌNH CLI
+# 4. ENTRY POINT & PARSER CLI
 # ==========================================
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="CLI Tool for Intent Classification Model")
+    parser = argparse.ArgumentParser(description="CLI phân loại ý định (Intent Classification)")
     subparsers = parser.add_subparsers(dest="command", help="Chọn chế độ chạy")
 
-    # Command 1: Dự đoán 1 câu
-    parser_predict = subparsers.add_parser("predict", help="Đoán nhãn cho 1 câu văn cụ thể")
-    parser_predict.add_argument("text", type=str, help="Câu văn cần kiểm tra (đặt trong dấu ngoặc kép)")
-    parser_predict.add_argument("-t", "--threshold", type=float, default=None, 
-                                help="Ngưỡng tự tin (OOS Threshold). Mặc định: 0.5 cho LR/NB, 0.35 cho DT")
-    parser_predict.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb", "dt"],
-                                help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes, 'dt' = Decision Tree (mặc định: lr)")
+    CHOICES_ONE = ["lr", "nb", "dt", "knn", "rf"]
+    CHOICES_ALL = ["lr", "nb", "dt", "knn", "rf", "all"]
+    HELP_MODEL = "lr=Logistic Regression, nb=Naive Bayes, dt=Decision Tree, knn=K-Nearest Neighbors, rf=Random Forest"
 
-    # Command 2: Chế độ Chat (Mặc định 'all' để hiện bảng kẻ ngang)
-    parser_chat = subparsers.add_parser("chat", help="Mở chế độ chat liên tục để test")
-    parser_chat.add_argument("-t", "--threshold", type=float, default=None, 
-                             help="Ngưỡng tự tin (OOS Threshold). Mặc định: 0.5 cho LR/NB, 0.35 cho DT")
-    parser_chat.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb", "dt"],
-                             help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes, 'dt' = Decision Tree (mặc định: lr)")
-    parser_chat.add_argument("-t", "--threshold", type=float, default=0.5, help="Ngưỡng tự tin (OOS Threshold)")
-    parser_chat.add_argument("-m", "--model", type=str, default="all", choices=["lr", "nb", "all"],
-                             help="Chọn mô hình: 'lr', 'nb', hoặc 'all' để so sánh (mặc định: all)")
+    # Command 1: predict — đoán 1 câu
+    p_predict = subparsers.add_parser("predict", help="Đoán nhãn cho 1 câu")
+    p_predict.add_argument("text", type=str, help="Câu cần kiểm tra (trong dấu ngoặc kép)")
+    p_predict.add_argument("-t", "--threshold", type=float, default=None,
+                           help="Ngưỡng OOS. Bỏ trống → dùng ngưỡng mặc định riêng từng model")
+    p_predict.add_argument("-m", "--model", type=str, default="all", choices=CHOICES_ALL,
+                           help=f"{HELP_MODEL}, all=tất cả (mặc định: all)")
 
-    # Command 3: Đánh giá mô hình
-    parser_eval = subparsers.add_parser("eval", help="Chạy đánh giá toàn bộ trên tập test_corpus.txt")
-    parser_eval.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb", "dt"],
-                             help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes, 'dt' = Decision Tree (mặc định: lr)")
+    # Command 2: chat — chat liên tục, mặc định hiện cả 4 model
+    p_chat = subparsers.add_parser("chat", help="Chat liên tục, so sánh các model")
+    p_chat.add_argument("-t", "--threshold", type=float, default=None,
+                        help="Ngưỡng OOS chung. Bỏ trống → mỗi model dùng ngưỡng riêng")
+    p_chat.add_argument("-m", "--model", type=str, default="all", choices=CHOICES_ALL,
+                        help=f"{HELP_MODEL}, all=so sánh tất cả (mặc định: all)")
+
+    # Command 3: eval — đánh giá test set
+    p_eval = subparsers.add_parser("eval", help="Đánh giá toàn bộ test_corpus.txt")
+    p_eval.add_argument("-m", "--model", type=str, default="all", choices=CHOICES_ALL,
+                        help=f"{HELP_MODEL}, all=đánh giá tất cả (mặc định: all)")
 
     args = parser.parse_args()
 
-    # Xử lý tự động gán ngưỡng threshold tối ưu nếu người dùng để trống (None)
-    current_threshold = args.threshold
-    if current_threshold is None:
-        if hasattr(args, "model") and args.model == "dt":
-            current_threshold = 0.35  # Giữ nguyên cấu hình tối ưu mượt của cây phân cấp
-        else:
-            current_threshold = 0.5   # Ngưỡng chuẩn cho LR và NB
-
     if args.command == "predict":
-        run_predict(args.text, current_threshold, args.model)
+        run_predict(args.text, args.threshold, args.model)
     elif args.command == "chat":
-        run_chat(current_threshold, args.model)
+        run_chat(args.threshold, args.model)
     elif args.command == "eval":
         run_eval(args.model)
     else:

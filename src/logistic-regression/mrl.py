@@ -1,74 +1,23 @@
-import os
-import math
+import sys
 import numpy as np # type: ignore
 import pickle
 from pathlib import Path
 
-# ── Đường dẫn (mrl.py nằm tại src/logistic-regression/) ───
+# ── Thư viện chung trong src/utils/ ───────────────────────
+# TfIdfVectorizer, LabelEncoder, load_split + đường dẫn đều lấy từ src/utils/
+# (nguồn DUY NHẤT) thay vì định nghĩa riêng ở đây. Các model khác cũng import
+# từ utils/, không còn phụ thuộc ngược vào file Logistic Regression này.
 BASE_DIR  = Path(__file__).resolve().parent.parent   # → src/
-INPUT_DIR = BASE_DIR / "input"
-MODEL_DIR = BASE_DIR / "model"
+UTILS_DIR = BASE_DIR / "utils"
+if str(UTILS_DIR) not in sys.path:
+    sys.path.append(str(UTILS_DIR))
+
+from tfidfcal import TfIdfVectorizer            # type: ignore
+from labelEncode import LabelEncoder            # type: ignore
+from dataio import load_split, INPUT_DIR, MODEL_DIR  # type: ignore
 
 # ========================================================
-# 1. COMPONENT: TF-IDF VECTORIZER
-# ========================================================
-class TfIdfVectorizer:
-    def __init__(self):
-        self.vocab = []
-        self.word_to_index = {}
-        self.idf_dict = {}
-
-    def fit_transform(self, documents):
-        """Học từ vựng từ tập huấn luyện và tạo luôn ma trận X"""
-        tokenized_docs = [doc.lower().split() for doc in documents]
-        n_docs = len(documents)
-        
-        df_counts = {}
-        for doc in tokenized_docs:
-            for word in set(doc):
-                df_counts[word] = df_counts.get(word, 0) + 1
-                
-        self.vocab = sorted(list(df_counts.keys()))
-        self.word_to_index = {word: idx for idx, word in enumerate(self.vocab)}
-        self.idf_dict = {word: math.log(n_docs / df) for word, df in df_counts.items()}
-        
-        return self.transform(documents)
-
-    def transform(self, documents):
-        """Dùng cho dữ liệu mới (không học thêm từ vựng mới)"""
-        tokenized_docs = [doc.lower().split() for doc in documents]
-        X = np.zeros((len(documents), len(self.vocab)))
-        
-        for i, doc in enumerate(tokenized_docs):
-            tf = {}
-            for word in doc:
-                tf[word] = tf.get(word, 0) + 1
-            for word, freq in tf.items():
-                if word in self.word_to_index:
-                    j = self.word_to_index[word]
-                    X[i, j] = freq * self.idf_dict[word]
-        return X
-
-# ========================================================
-# 2. COMPONENT: LABEL ENCODER
-# ========================================================
-class LabelEncoder:
-    def __init__(self):
-        self.classes = []
-        self.label_to_index = {}
-        self.index_to_label = {}
-
-    def fit_transform(self, labels):
-        self.classes = sorted(list(set(labels)))
-        self.label_to_index = {label: idx for idx, label in enumerate(self.classes)}
-        self.index_to_label = {idx: label for idx, label in enumerate(self.classes)}
-        return np.array([self.label_to_index[label] for label in labels])
-    
-    def inverse_transform(self, indices):
-        return [self.index_to_label[idx] for idx in indices]
-
-# ========================================================
-# 3. COMPONENT: MULTINOMIAL LOGISTIC REGRESSION
+# MULTINOMIAL LOGISTIC REGRESSION
 # ========================================================
 class MultinomialLogisticRegression:
     def __init__(self, learning_rate=0.1, epochs=1000):
@@ -121,30 +70,6 @@ class MultinomialLogisticRegression:
         predicted_idx  = np.argmax(probabilities, axis=1)
         final_predictions = np.where(max_probs >= threshold, predicted_idx, -1)
         return final_predictions, max_probs
-
-# ========================================================
-# HELPER: ĐỌC FILE CORPUS + LABELS
-# ========================================================
-def load_split(corpus_path: Path, labels_path: Path):
-    """Đọc và làm sạch một cặp file corpus/labels, trả về (corpus, labels)."""
-    with open(corpus_path, encoding="utf-8") as fc:
-        raw_corpus = fc.readlines()
-    with open(labels_path, encoding="utf-8") as fl:
-        raw_labels = fl.readlines()
-
-    # Căn độ dài phòng trường hợp file lệch dòng
-    min_len = min(len(raw_corpus), len(raw_labels))
-
-    corpus, labels = [], []
-    for c_line, l_line in zip(raw_corpus[:min_len], raw_labels[:min_len]):
-        c, l = c_line.strip(), l_line.strip()
-        if c and l:
-            corpus.append(c)
-            labels.append(l)
-
-    if not corpus:
-        raise ValueError(f"Không có dữ liệu hợp lệ trong {corpus_path.name}!")
-    return corpus, labels
 
 # ========================================================
 # HELPER: ĐÁNH GIÁ TRÊN TẬP VALIDATION
