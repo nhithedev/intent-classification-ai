@@ -8,7 +8,7 @@ Tiện ích I/O dùng chung cho mọi model: đường dẫn chuẩn + đọc fi
     - labelEncode.py → LabelEncoder
     - dataio.py      → load_split, INPUT_DIR, MODEL_DIR   (file này)
 
-Cả 4 model (mrl, mnb, mdt, mknn) import từ đây thay vì phụ thuộc lẫn nhau.
+Cả 4 model (mrl, mnb, mknn, mrf) import từ đây thay vì phụ thuộc lẫn nhau.
 """
 
 from pathlib import Path
