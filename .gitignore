@@ -1,0 +1,8 @@
+# Trained model artifacts — regenerate by running each training script
+src/model/*.pkl
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env

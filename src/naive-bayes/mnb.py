@@ -8,14 +8,15 @@ BASE_DIR  = Path(__file__).resolve().parent.parent   # → src/
 INPUT_DIR = BASE_DIR / "input"
 MODEL_DIR = BASE_DIR / "model"
 
-# Thêm thư mục logistic-regression vào path để dùng lại
-# TfIdfVectorizer và LabelEncoder của đồng đội
+# Dùng thư viện chung trong src/utils/ (nguồn DUY NHẤT — không phụ thuộc vào mrl)
 import sys
-LOGISTIC_DIR = BASE_DIR / "logistic-regression"
-if str(LOGISTIC_DIR) not in sys.path:
-    sys.path.append(str(LOGISTIC_DIR))
+UTILS_DIR = BASE_DIR / "utils"
+if str(UTILS_DIR) not in sys.path:
+    sys.path.append(str(UTILS_DIR))
 
-from mrl import TfIdfVectorizer, LabelEncoder, load_split  # type: ignore
+from tfidfcal import TfIdfVectorizer       # type: ignore
+from labelEncode import LabelEncoder       # type: ignore
+from dataio import load_split             # type: ignore
 
 
 # ========================================================
