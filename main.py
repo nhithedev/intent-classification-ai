@@ -31,7 +31,6 @@ except ImportError as e:
     exit(1)
 
 try:
-    # Đã sửa đổi để import đúng class cây phân cấp mới
     from mdt import HierarchicalDecisionTree  # type: ignore
 except ImportError as e:
     print(f"Lỗi Import mdt: {e}. Vui lòng kiểm tra thư mục src/decision-tree/")
@@ -50,6 +49,14 @@ MODEL_FILES = {
     "dt": ("DecisionTree_model.pkl",       "Decision Tree"),
 }
 
+# Ngưỡng OOS mặc định theo từng loại model
+DEFAULT_THRESHOLD = {
+    "lr":  0.5,
+    "nb":  0.5,
+    "dt":  0.35,
+    "all": 0.5,
+}
+
 def load_model(model_type: str = "lr"):
     """Tải mô hình đã lưu theo loại model_type ('lr', 'nb', hoặc 'dt')."""
     if model_type not in MODEL_FILES:
@@ -60,14 +67,13 @@ def load_model(model_type: str = "lr"):
     save_path = MODEL_DIR / filename
 
     if not save_path.exists():
-        print(f"Không tìm thấy mô hình '{display_name}' tại {save_path}.")
         train_scripts = {
             "lr": "logistic-regression/mrl.py",
             "nb": "naive-bayes/mnb.py",
             "dt": "decision-tree/mdt.py"
         }
-        print(f"Bạn cần chạy train trước (python src/{train_scripts[model_type]})!")
-        print(f"Bạn cần chạy train trước!")
+        print(f"Không tìm thấy mô hình '{display_name}' tại {save_path}.")
+        print(f"Bạn cần chạy train trước: python src/{train_scripts[model_type]}")
         exit(1)
 
     with open(save_path, 'rb') as f:
@@ -86,7 +92,6 @@ def run_predict(text, threshold, model_type):
     print(f"> {text}")
     print(f"  Model     : {display_name}")
 
-    # Bẫy lỗi chống KeyError -1 khi nghịch đảo nhãn OOS
     if preds[0] == -1:
         print(f"  Intent    : [OUT OF SCOPE]")
     else:
@@ -98,32 +103,32 @@ def run_predict(text, threshold, model_type):
 
 def run_chat(threshold, model_type):
     """Chế độ chat liên tục với model"""
-    vectorizer, label_encoder, model, display_name = load_model(model_type)
-    print(f"\n=== ĐÃ VÀO CHẾ ĐỘ CHAT [{display_name}] (Gõ 'exit' hoặc 'quit' để thoát) ===")
-    print(f"=== Ngưỡng lọc OOS hiện tại: {threshold} ===\n")
-    """Chế độ chat: Hiển thị bảng ngang khi so sánh 'all', hoặc khối dọc nếu test 1 model"""
-    
-    # Nếu không truyền param, mặc định là 'all' -> load cả 2 mô hình
-    models_to_run = ["lr", "nb"] if model_type == "all" else [model_type]
+
+    # "all" → load cả 3 mô hình để so sánh song song
+    models_to_run = ["lr", "nb", "dt"] if model_type == "all" else [model_type]
     loaded_models = []
-    
+
     for m in models_to_run:
         vec, enc, mod, name = load_model(m)
         loaded_models.append({
             "vectorizer": vec,
-            "encoder": enc,
-            "model": mod,
-            "name": name
+            "encoder":    enc,
+            "model":      mod,
+            "name":       name,
+            # Mỗi model dùng threshold riêng khi chạy "all" (người dùng không truyền -t)
+            "threshold":  threshold if threshold is not None else DEFAULT_THRESHOLD[m],
         })
 
-    print(f"\n=== ĐÃ VÀO CHẾ ĐỘ CHAT (Gõ 'exit' hoặc 'quit' để thoát) ===\n")
+    effective_threshold = threshold if threshold is not None else DEFAULT_THRESHOLD[model_type]
+    print(f"\n=== ĐÃ VÀO CHẾ ĐỘ CHAT (Gõ 'exit' hoặc 'quit' để thoát) ===")
+    print(f"=== Ngưỡng lọc OOS hiện tại: {effective_threshold} ===\n")
 
     while True:
         text = input("> ")
         if text.lower() in ['exit', 'quit']:
             print("Đã thoát chế độ chat.")
             break
-        
+
         if not text.strip():
             continue
 
@@ -134,48 +139,40 @@ def run_chat(threshold, model_type):
             print("-" * 65)
             for item in loaded_models:
                 X = item["vectorizer"].transform([text])
-                preds, probs = item["model"].predict_with_oos(X, threshold=threshold)
+                preds, probs = item["model"].predict_with_oos(X, threshold=item["threshold"])
 
-        print(f"  Model     : {display_name}")
-        
-        # Bẫy lỗi chống KeyError -1 khi nghịch đảo nhãn OOS
-        if preds[0] == -1:
-            print(f"  Intent    : [OUT OF SCOPE]")
-                intent = "[OUT OF SCOPE]" if preds[0] == -1 else item["encoder"].inverse_transform([preds[0]])[0]
+                intent = "[OUT OF SCOPE]" if preds[0] == -1 else item["encoder"].index_to_label.get(preds[0], "[UNKNOWN]")
                 conf = probs[0]
 
                 print(f"| {item['name']:<20} | {intent:<22} | {conf:<12.2f} |")
             print("-" * 65 + "\n")
-            
+
         # NẾU CHỈ CÓ 1 MÔ HÌNH: IN KHỐI DỌC BÌNH THƯỜNG
         else:
-            label_text = label_encoder.index_to_label.get(preds[0], "[OUT OF SCOPE]")
-            print(f"  Intent    : {label_text}")
-
-        print(f"  Confidence: {probs[0]:.2f}\n")
             item = loaded_models[0]
             X = item["vectorizer"].transform([text])
-            preds, probs = item["model"].predict_with_oos(X, threshold=threshold)
-            
-            intent = "[OUT OF SCOPE]" if preds[0] == -1 else item["encoder"].inverse_transform([preds[0]])[0]
+            preds, probs = item["model"].predict_with_oos(X, threshold=item["threshold"])
+
+            intent = "[OUT OF SCOPE]" if preds[0] == -1 else item["encoder"].index_to_label.get(preds[0], "[UNKNOWN]")
             conf = probs[0]
 
             print(f"  Model     : {item['name']}")
             print(f"  Intent    : {intent}")
             print(f"  Confidence: {conf:.2f}\n")
 
-def run_eval(model_type):
+
+def run_eval(model_type, threshold):
     """Chế độ chạy test toàn bộ file dữ liệu (Metrics)"""
     TEST_CORPUS_PATH = INPUT_DIR / "test_corpus.txt"
     TEST_LABELS_PATH = INPUT_DIR / "test_labels.txt"
 
     vectorizer, label_encoder, model, display_name = load_model(model_type)
-    
+
     with open(TEST_CORPUS_PATH, 'r', encoding='utf-8') as f:
         raw_corpus = f.readlines()
     with open(TEST_LABELS_PATH, 'r', encoding='utf-8') as f:
         raw_labels = f.readlines()
-        
+
     min_len = min(len(raw_corpus), len(raw_labels))
     test_corpus = [line.strip() for line in raw_corpus[:min_len] if line.strip()]
     test_labels_text = [line.strip() for line in raw_labels[:min_len] if line.strip()]
@@ -184,34 +181,35 @@ def run_eval(model_type):
     filtered_corpus = []
     y_test_true = []
     skipped = 0
-    
+
     for text, lbl in zip(test_corpus, test_labels_text):
         if lbl in label_encoder.label_to_index:
             filtered_corpus.append(text)
             y_test_true.append(label_encoder.label_to_index[lbl])
         else:
             skipped += 1
-            
+
     y_test_true = np.array(y_test_true)
     X_test = vectorizer.transform(filtered_corpus)
-    
+
     if skipped > 0:
         print(f"⚠️ Bỏ qua {skipped} mẫu có nhãn lạ chưa xuất hiện lúc Train.")
-        
-    # Đồng bộ hóa cơ chế dự đoán cho cả mô hình phẳng lẫn mô hình cây phân cấp phân tách OOS
+
+    # Dùng đúng threshold thực tế (không hard-code 0.0) để kết quả eval phản ánh thực tế
     if hasattr(model, "predict_with_oos"):
-        y_test_pred, _ = model.predict_with_oos(X_test, threshold=0.0) # threshold=0.0 lấy dự đoán in-scope tối ưu nhất
+        y_test_pred, _ = model.predict_with_oos(X_test, threshold=threshold)
     else:
         y_test_pred = model.predict(X_test)
-    
+
     print("\n" + "="*40)
     print(f"{'KẾT QUẢ ĐÁNH GIÁ MÔ HÌNH (TEST METRICS)':^40}")
     print("="*40)
     avg_method = 'macro' if len(label_encoder.classes) > 2 else 'binary'
     print(f"Mô hình          : {display_name}")
+    print(f"Ngưỡng OOS       : {threshold}")
     print(f"Tổng số mẫu test : {len(y_test_true)}")
     print(f"Chế độ trung bình: {avg_method}\n")
-    
+
     print(f"{'Accuracy':<15}: {accuracy_score(y_test_true, y_test_pred):.4f}")
     print(f"{'Precision':<15}: {precision_score(y_test_true, y_test_pred, average=avg_method, zero_division=0):.4f}")
     print(f"{'Recall':<15}: {recall_score(y_test_true, y_test_pred, average=avg_method, zero_division=0):.4f}")
@@ -228,41 +226,36 @@ if __name__ == "__main__":
     # Command 1: Dự đoán 1 câu
     parser_predict = subparsers.add_parser("predict", help="Đoán nhãn cho 1 câu văn cụ thể")
     parser_predict.add_argument("text", type=str, help="Câu văn cần kiểm tra (đặt trong dấu ngoặc kép)")
-    parser_predict.add_argument("-t", "--threshold", type=float, default=None, 
+    parser_predict.add_argument("-t", "--threshold", type=float, default=None,
                                 help="Ngưỡng tự tin (OOS Threshold). Mặc định: 0.5 cho LR/NB, 0.35 cho DT")
     parser_predict.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb", "dt"],
-                                help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes, 'dt' = Decision Tree (mặc định: lr)")
+                                help="Chọn mô hình: lr | nb | dt  (mặc định: lr)")
 
-    # Command 2: Chế độ Chat (Mặc định 'all' để hiện bảng kẻ ngang)
+    # Command 2: Chế độ Chat
     parser_chat = subparsers.add_parser("chat", help="Mở chế độ chat liên tục để test")
-    parser_chat.add_argument("-t", "--threshold", type=float, default=None, 
+    parser_chat.add_argument("-t", "--threshold", type=float, default=None,
                              help="Ngưỡng tự tin (OOS Threshold). Mặc định: 0.5 cho LR/NB, 0.35 cho DT")
-    parser_chat.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb", "dt"],
-                             help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes, 'dt' = Decision Tree (mặc định: lr)")
-    parser_chat.add_argument("-t", "--threshold", type=float, default=0.5, help="Ngưỡng tự tin (OOS Threshold)")
-    parser_chat.add_argument("-m", "--model", type=str, default="all", choices=["lr", "nb", "all"],
-                             help="Chọn mô hình: 'lr', 'nb', hoặc 'all' để so sánh (mặc định: all)")
+    parser_chat.add_argument("-m", "--model", type=str, default="all", choices=["lr", "nb", "dt", "all"],
+                             help="Chọn mô hình: lr | nb | dt | all  (mặc định: all – hiện bảng so sánh)")
 
     # Command 3: Đánh giá mô hình
     parser_eval = subparsers.add_parser("eval", help="Chạy đánh giá toàn bộ trên tập test_corpus.txt")
+    parser_eval.add_argument("-t", "--threshold", type=float, default=None,
+                             help="Ngưỡng tự tin (OOS Threshold). Mặc định: 0.5 cho LR/NB, 0.35 cho DT")
     parser_eval.add_argument("-m", "--model", type=str, default="lr", choices=["lr", "nb", "dt"],
-                             help="Chọn mô hình: 'lr' = Logistic Regression, 'nb' = Naive Bayes, 'dt' = Decision Tree (mặc định: lr)")
+                             help="Chọn mô hình: lr | nb | dt  (mặc định: lr)")
 
     args = parser.parse_args()
 
-    # Xử lý tự động gán ngưỡng threshold tối ưu nếu người dùng để trống (None)
-    current_threshold = args.threshold
-    if current_threshold is None:
-        if hasattr(args, "model") and args.model == "dt":
-            current_threshold = 0.35  # Giữ nguyên cấu hình tối ưu mượt của cây phân cấp
-        else:
-            current_threshold = 0.5   # Ngưỡng chuẩn cho LR và NB
+    # Tự động gán ngưỡng threshold tối ưu nếu người dùng để trống (None)
+    model_key = getattr(args, "model", "lr")
+    current_threshold = args.threshold if args.threshold is not None else DEFAULT_THRESHOLD.get(model_key, 0.5)
 
     if args.command == "predict":
         run_predict(args.text, current_threshold, args.model)
     elif args.command == "chat":
         run_chat(current_threshold, args.model)
     elif args.command == "eval":
-        run_eval(args.model)
+        run_eval(args.model, current_threshold)
     else:
         parser.print_help()
