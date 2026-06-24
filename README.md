@@ -106,13 +106,13 @@ Chạy `python benchmark.py` để tái lập toàn bộ bảng dưới đây. C
 
 | Metric | Logistic Regression | Naive Bayes | KNN (k=11) | Nearest Centroid |
 |---|---|---|---|---|
-| Train Accuracy | 98.31% | 98.51% | 100.00% | 89.11% |
-| Val Accuracy | 89.37% | 87.70% | 81.20% | 82.23% |
-| Test Accuracy | **89.62%** | 87.78% | 82.16% | 83.07% |
-| Overfit Gap (train − val) | +8.95% | +10.81% | +18.80% | **+6.88%** |
-| Macro F1 (test) | **0.8954** | 0.8757 | 0.8182 | 0.8286 |
-| Macro Precision | **0.9009** | 0.8831 | 0.8327 | 0.8445 |
-| Macro Recall | **0.8962** | 0.8778 | 0.8216 | 0.8307 |
+| Train Accuracy | 98.91% | 98.51% | 100.00% | 89.11% |
+| Val Accuracy | 89.47% | 87.70% | 81.20% | 82.23% |
+| Test Accuracy | **90.13%** | 87.78% | 82.16% | 83.07% |
+| Overfit Gap (train − val) | +9.44% | +10.81% | +18.80% | **+6.88%** |
+| Macro F1 (test) | **0.9013** | 0.8757 | 0.8182 | 0.8286 |
+| Macro Precision | **0.9008** | 0.8831 | 0.8327 | 0.8445 |
+| Macro Recall | **0.9062** | 0.8778 | 0.8216 | 0.8307 |
 | Training Time | 2.84 m | **0.60 s** | 7.65 s | 0.97 s |
 | Inference Time | 0.0249 ms/câu | 0.0264 ms/câu | 2.0065 ms/câu | 0.0514 ms/câu |
 | Model Size (.pkl) | 6.13 MB | 6.13 MB | 597.54 MB | 6.13 MB |
