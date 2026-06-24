@@ -196,11 +196,11 @@ def run_chat(threshold, model_type):
             continue
 
         # NẾU CÓ NHIỀU MÔ HÌNH: IN DƯỚI DẠNG BẢNG NGANG
-        if len(loaded_models) > 1:
+        if len(loaded) > 1:
             print("-" * 65)
             print(f"| {'Model':<20} | {'Intent':<22} | {'Confidence':<12} |")
             print("-" * 65)
-            for item in loaded_models:
+            for item in loaded:
                 X = item["vectorizer"].transform([text])
                 preds, probs = item["model"].predict_with_oos(X, threshold=item["threshold"])
 
@@ -212,7 +212,7 @@ def run_chat(threshold, model_type):
 
         # NẾU CHỈ CÓ 1 MÔ HÌNH: IN KHỐI DỌC BÌNH THƯỜNG
         else:
-            item = loaded_models[0]
+            item = loaded[0]
             X = item["vectorizer"].transform([text])
             preds, probs = item["model"].predict_with_oos(X, threshold=item["threshold"])
 

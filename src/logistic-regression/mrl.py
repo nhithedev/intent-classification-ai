@@ -20,9 +20,10 @@ from dataio import load_split, INPUT_DIR, MODEL_DIR  # type: ignore
 # MULTINOMIAL LOGISTIC REGRESSION
 # ========================================================
 class MultinomialLogisticRegression:
-    def __init__(self, learning_rate=0.1, epochs=1000):
+    def __init__(self, learning_rate=0.1, epochs=1000, l2_penalty=0.01):
         self.lr = learning_rate
         self.epochs = epochs
+        self.l2_penalty = l2_penalty
         self.weights = None
         self.bias = None
 
@@ -30,7 +31,7 @@ class MultinomialLogisticRegression:
         exp_z = np.exp(z - np.max(z, axis=1, keepdims=True))
         return exp_z / np.sum(exp_z, axis=1, keepdims=True)
 
-    def fit(self, X, y):
+    def fit(self, X, y, X_val=None, y_val=None, patience=50):
         n_samples, n_features = X.shape
         n_classes = len(np.unique(y))
         
@@ -38,7 +39,15 @@ class MultinomialLogisticRegression:
         self.bias    = np.zeros((1, n_classes))
         y_one_hot    = np.eye(n_classes)[y]
         
-        print(f"Bắt đầu huấn luyện với {self.epochs} vòng lặp...")
+        if y_val is not None:
+            y_val_one_hot = np.eye(n_classes)[y_val]
+            
+        best_val_loss = float('inf')
+        patience_counter = 0
+        best_weights = None
+        best_bias = None
+        
+        print(f"Bắt đầu huấn luyện tối đa {self.epochs} vòng lặp (Patience={patience})...")
         for epoch in range(self.epochs):
             scores        = np.dot(X, self.weights) + self.bias
             probabilities = self._softmax(scores)
@@ -47,12 +56,41 @@ class MultinomialLogisticRegression:
             dw = (1 / n_samples) * np.dot(X.T, error)
             db = (1 / n_samples) * np.sum(error, axis=0, keepdims=True)
             
+            # Tính đạo hàm của L2 Penalty
+            dw += (self.l2_penalty / n_samples) * self.weights
+            
             self.weights -= self.lr * dw
             self.bias    -= self.lr * db
             
-            if epoch % 100 == 0 or epoch == self.epochs - 1:
-                loss = -np.mean(np.sum(y_one_hot * np.log(probabilities + 1e-15), axis=1))
-                print(f"  - Vòng lặp {epoch:4d} | Loss: {loss:.4f}")
+            if epoch % 10 == 0 or epoch == self.epochs - 1:
+                train_loss = -np.mean(np.sum(y_one_hot * np.log(probabilities + 1e-15), axis=1))
+                l2_cost = (self.l2_penalty / (2 * n_samples)) * np.sum(self.weights ** 2)
+                train_loss += l2_cost
+                
+                if X_val is not None and y_val is not None:
+                    val_scores = np.dot(X_val, self.weights) + self.bias
+                    val_probs = self._softmax(val_scores)
+                    val_loss = -np.mean(np.sum(y_val_one_hot * np.log(val_probs + 1e-15), axis=1)) + l2_cost
+                    
+                    if epoch % 100 == 0:
+                        print(f"  - Vòng lặp {epoch:4d} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
+                        
+                    if val_loss < best_val_loss:
+                        best_val_loss = val_loss
+                        patience_counter = 0
+                        best_weights = self.weights.copy()
+                        best_bias = self.bias.copy()
+                    else:
+                        patience_counter += 10
+                        
+                    if patience_counter >= patience:
+                        print(f"\n[Early Stopping] Dừng sớm tại vòng lặp {epoch}. Khôi phục trọng số tốt nhất (Val Loss: {best_val_loss:.4f})")
+                        self.weights = best_weights
+                        self.bias = best_bias
+                        break
+                else:
+                    if epoch % 100 == 0:
+                        print(f"  - Vòng lặp {epoch:4d} | Train Loss: {train_loss:.4f}")
 
     def predict(self, X):
         scores = np.dot(X, self.weights) + self.bias
@@ -172,8 +210,14 @@ if __name__ == "__main__":
 
     # ── 4. Huấn luyện ─────────────────────────────────────
     print("\n[Bước 4] Huấn luyện mô hình MLR...")
-    model = MultinomialLogisticRegression(learning_rate=0.5, epochs=500)
-    model.fit(X_train, y_train)
+    model = MultinomialLogisticRegression(learning_rate=0.5, epochs=1000, l2_penalty=0.01)
+    
+    valid_val_idx = [i for i, lbl in enumerate(val_labels) if lbl != "oos"]
+    X_val_valid = X_val[valid_val_idx]
+    val_labels_valid = [val_labels[i] for i in valid_val_idx]
+    y_val_valid = label_encoder.transform(val_labels_valid)
+    
+    model.fit(X_train, y_train, X_val=X_val_valid, y_val=y_val_valid, patience=50)
 
     # ── 5. Đánh giá trên tập Validation ──────────────────
     print("\n[Bước 5] Đánh giá trên tập Validation:")

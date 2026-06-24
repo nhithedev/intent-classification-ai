@@ -64,9 +64,10 @@ class LabelEncoder:
 # 2. LOGISTIC REGRESSION CẢI TIẾN
 # ========================================================
 class MultinomialLogisticRegression:
-    def __init__(self, learning_rate=0.1, epochs=1000):
+    def __init__(self, learning_rate=0.1, epochs=1000, l2_penalty=0.01):
         self.lr = learning_rate
         self.epochs = epochs
+        self.l2_penalty = l2_penalty
         self.weights = None
         self.bias = None
 
@@ -93,17 +94,22 @@ class MultinomialLogisticRegression:
             probs_train  = self._softmax(scores_train)
             error        = probs_train - y_train_one_hot
             
-            train_loss = -np.mean(np.sum(y_train_one_hot * np.log(probs_train + 1e-15), axis=1))
+            # Tính Loss với L2 Regularization Cost
+            l2_cost = (self.l2_penalty / (2 * n_samples)) * np.sum(self.weights ** 2)
+            train_loss = -np.mean(np.sum(y_train_one_hot * np.log(probs_train + 1e-15), axis=1)) + l2_cost
             train_loss_history.append(train_loss)
             
             if X_val is not None and y_val is not None:
                 scores_val = np.dot(X_val, self.weights) + self.bias
                 probs_val  = self._softmax(scores_val)
-                val_loss   = -np.mean(np.sum(y_val_one_hot * np.log(probs_val + 1e-15), axis=1))
+                val_loss   = -np.mean(np.sum(y_val_one_hot * np.log(probs_val + 1e-15), axis=1)) + l2_cost
                 val_loss_history.append(val_loss)
             
             dw = (1 / n_samples) * np.dot(X_train.T, error)
             db = (1 / n_samples) * np.sum(error, axis=0, keepdims=True)
+            
+            # Đạo hàm của L2 Penalty
+            dw += (self.l2_penalty / n_samples) * self.weights
             
             self.weights -= self.lr * dw
             self.bias    -= self.lr * db
