@@ -15,5 +15,7 @@ class LabelEncoder:
         
         return np.array([self.label_to_index[label] for label in labels])
     
+    def transform(self, labels):
+        return np.array([self.label_to_index.get(label, -1) for label in labels])
     def inverse_transform(self, indices):
         return [self.index_to_label[idx] for idx in indices]

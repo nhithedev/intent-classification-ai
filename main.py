@@ -191,14 +191,35 @@ def run_chat(threshold, model_type):
         if text.lower() in ('exit', 'quit'):
             print("Đã thoát chế độ chat.")
             break
+
         if not text.strip():
             continue
 
+        # NẾU CÓ NHIỀU MÔ HÌNH: IN DƯỚI DẠNG BẢNG NGANG
         if len(loaded) > 1:
-            _print_table(loaded, text)
+            print("-" * 65)
+            print(f"| {'Model':<20} | {'Intent':<22} | {'Confidence':<12} |")
+            print("-" * 65)
+            for item in loaded:
+                X = item["vectorizer"].transform([text])
+                preds, probs = item["model"].predict_with_oos(X, threshold=item["threshold"])
+
+                intent = "[OUT OF SCOPE]" if preds[0] == -1 else item["encoder"].index_to_label.get(preds[0], "[UNKNOWN]")
+                conf = probs[0]
+
+                print(f"| {item['name']:<20} | {intent:<22} | {conf:<12.2f} |")
+            print("-" * 65 + "\n")
+
+        # NẾU CHỈ CÓ 1 MÔ HÌNH: IN KHỐI DỌC BÌNH THƯỜNG
         else:
-            intent, conf = predict_one(loaded[0], text)
-            print(f"  Model     : {loaded[0]['name']}")
+            item = loaded[0]
+            X = item["vectorizer"].transform([text])
+            preds, probs = item["model"].predict_with_oos(X, threshold=item["threshold"])
+
+            intent = "[OUT OF SCOPE]" if preds[0] == -1 else item["encoder"].index_to_label.get(preds[0], "[UNKNOWN]")
+            conf = probs[0]
+
+            print(f"  Model     : {item['name']}")
             print(f"  Intent    : {intent}")
             print(f"  Confidence: {conf:.2f}\n")
 
@@ -251,6 +272,7 @@ def _eval_one(model_type):
     print(f"{'KẾT QUẢ ĐÁNH GIÁ (TEST METRICS)':^40}")
     print("=" * 40)
     print(f"Mô hình          : {display_name}")
+    print(f"Ngưỡng OOS       : {threshold}")
     print(f"Tổng số mẫu test : {len(y_test_true)}")
     print(f"Chế độ trung bình: {avg_method}\n")
     print(f"{'Accuracy':<15}: {accuracy_score(y_test_true, y_test_pred):.4f}")

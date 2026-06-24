@@ -22,7 +22,8 @@ def clean(text: str) -> str:
 # 1. COMPONENT: TF-IDF VECTORIZER
 # ========================================================
 class TfIdfVectorizer:
-    def __init__(self):
+    def __init__(self, min_df=2):
+        self.min_df = min_df
         self.vocab = []
         self.word_to_index = {}
         self.idf_dict = {}
@@ -38,12 +39,12 @@ class TfIdfVectorizer:
             for word in set(doc):
                 df_counts[word] = df_counts.get(word, 0) + 1
                 
-        # Xây dựng từ vựng (Vocabulary)
-        self.vocab = sorted(list(df_counts.keys()))
+        # Xây dựng từ vựng (Vocabulary) lọc theo min_df
+        self.vocab = sorted([word for word, count in df_counts.items() if count >= self.min_df])
         self.word_to_index = {word: idx for idx, word in enumerate(self.vocab)}
         
-        # Tính IDF cho từng từ
-        self.idf_dict = {word: math.log(n_docs / df) for word, df in df_counts.items()}
+        # Tính IDF cho từng từ trong vocab
+        self.idf_dict = {word: math.log(n_docs / df_counts[word]) for word in self.vocab}
         
         # Biến đổi thành Ma trận X
         return self.transform(documents)
