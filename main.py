@@ -19,12 +19,11 @@ ROOT_DIR     = Path(__file__).resolve().parent
 UTILS_DIR    = ROOT_DIR / "src" / "utils"
 LOGISTIC_DIR = ROOT_DIR / "src" / "logistic-regression"
 NAIVE_DIR    = ROOT_DIR / "src" / "naive-bayes"
-DECISION_DIR = ROOT_DIR / "src" / "decision-tree"
 KNN_DIR      = ROOT_DIR / "src" / "k-nearest-neighbor"
-RF_DIR       = ROOT_DIR / "src" / "random-forest"
+CENTROID_DIR = ROOT_DIR / "src" / "nearest-centroid"
 
-# Thêm utils/ + 5 thư mục model vào sys.path để pickle tìm thấy class khi giải nén
-for _dir in (UTILS_DIR, LOGISTIC_DIR, NAIVE_DIR, DECISION_DIR, KNN_DIR, RF_DIR):
+# Thêm utils/ + 4 thư mục model vào sys.path để pickle tìm thấy class khi giải nén
+for _dir in (UTILS_DIR, LOGISTIC_DIR, NAIVE_DIR, KNN_DIR, CENTROID_DIR):
     if str(_dir) not in sys.path:
         sys.path.append(str(_dir))
 
@@ -45,39 +44,31 @@ except ImportError as e:
     exit(1)
 
 try:
-    from mnb import MultinomialNaiveBayes  # type: ignore
+    from mnb import MultinomialNaiveBayes  # type: ignore  # noqa: F401
 except ImportError as e:
     print(f"Lỗi Import mnb: {e}. Kiểm tra thư mục src/naive-bayes/")
     exit(1)
 
 try:
-    from mdt import HierarchicalDecisionTree  # type: ignore
-except ImportError as e:
-    print(f"Lỗi Import mdt: {e}. Kiểm tra thư mục src/decision-tree/")
-    exit(1)
-
-try:
-    from mknn import KNearestNeighbors  # type: ignore
+    from mknn import KNearestNeighbors  # type: ignore  # noqa: F401
 except ImportError as e:
     print(f"Lỗi Import mknn: {e}. Kiểm tra thư mục src/k-nearest-neighbor/")
     exit(1)
 
 try:
-    from mrf import RandomForest  # type: ignore
+    from mnc import NearestCentroid  # type: ignore  # noqa: F401
 except ImportError as e:
-    print(f"Lỗi Import mrf: {e}. Kiểm tra thư mục src/random-forest/")
+    print(f"Lỗi Import mnc: {e}. Kiểm tra thư mục src/nearest-centroid/")
     exit(1)
 
 # Đăng ký module ảo để pickle không lỗi "Can't get attribute".
-# Các model được train bằng cách chạy file trực tiếp (python mdt.py / mknn.py)
+# Các model được train bằng cách chạy file trực tiếp (python mknn.py / mnc.py)
 # nên class được pickle dưới module '__main__'. Việc import ở trên đã đưa class
 # vào namespace của main.py (chính là __main__) → pickle.load tìm thấy.
-import mdt
-import mknn
-import mrf
-sys.modules['mdt']  = mdt
+import mknn  # type: ignore
+import mnc   # type: ignore
 sys.modules['mknn'] = mknn
-sys.modules['mrf']  = mrf
+sys.modules['mnc']  = mnc
 
 # ==========================================
 # 2. CÁC HÀM TIỆN ÍCH LÕI
@@ -86,20 +77,18 @@ sys.modules['mrf']  = mrf
 MODEL_FILES = {
     "lr":  ("LogisticRegression_model.pkl", "Logistic Regression", 0.50),
     "nb":  ("NaiveBayes_model.pkl",         "Naive Bayes",         0.50),
-    "dt":  ("DecisionTree_model.pkl",       "Decision Tree",       0.35),
     "knn": ("KNN_model.pkl",                "K-Nearest Neighbors", 0.30),
-    "rf":  ("RandomForest_model.pkl",       "Random Forest",       0.15),
+    "nc":  ("NearestCentroid_model.pkl",    "Nearest Centroid",    0.15),
 }
 
 # Thứ tự hiển thị khi chạy chế độ "all"
-ALL_MODELS = ["lr", "nb", "dt", "knn", "rf"]
+ALL_MODELS = ["lr", "nb", "knn", "nc"]
 
 TRAIN_SCRIPTS = {
     "lr":  "logistic-regression/mrl.py",
     "nb":  "naive-bayes/mnb.py",
-    "dt":  "decision-tree/mdt.py",
     "knn": "k-nearest-neighbor/mknn.py",
-    "rf":  "random-forest/mrf.py",
+    "nc":  "nearest-centroid/mnc.py",
 }
 
 
@@ -300,9 +289,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="CLI phân loại ý định (Intent Classification)")
     subparsers = parser.add_subparsers(dest="command", help="Chọn chế độ chạy")
 
-    CHOICES_ONE = ["lr", "nb", "dt", "knn", "rf"]
-    CHOICES_ALL = ["lr", "nb", "dt", "knn", "rf", "all"]
-    HELP_MODEL = "lr=Logistic Regression, nb=Naive Bayes, dt=Decision Tree, knn=K-Nearest Neighbors, rf=Random Forest"
+    CHOICES_ALL = ["lr", "nb", "knn", "nc", "all"]
+    HELP_MODEL = "lr=Logistic Regression, nb=Naive Bayes, knn=K-Nearest Neighbors, nc=Nearest Centroid"
 
     # Command 1: predict — đoán 1 câu
     p_predict = subparsers.add_parser("predict", help="Đoán nhãn cho 1 câu")
@@ -331,6 +319,6 @@ if __name__ == "__main__":
     elif args.command == "chat":
         run_chat(args.threshold, args.model)
     elif args.command == "eval":
-        run_eval(args.model, current_threshold)
+        run_eval(args.model)
     else:
         parser.print_help()

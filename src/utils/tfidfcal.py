@@ -1,5 +1,23 @@
 import math
+import re
 import numpy as np # type: ignore
+
+# ========================================================
+# 0. PREPROCESSING
+# ========================================================
+def clean(text: str) -> str:
+    """
+    Chuẩn hóa văn bản trước khi tokenize:
+      1. Lowercase
+      2. Xóa ký tự đặc biệt (giữ lại chữ cái, chữ số, khoảng trắng)
+      3. Chuẩn hóa khoảng trắng
+    Dùng chung cho cả train data lẫn chat input.
+    """
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9\s]", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
 # ========================================================
 # 1. COMPONENT: TF-IDF VECTORIZER
 # ========================================================
@@ -11,7 +29,7 @@ class TfIdfVectorizer:
 
     def fit_transform(self, documents):
         """Học từ vựng từ tập huấn luyện và tạo luôn ma trận X"""
-        tokenized_docs = [doc.lower().split() for doc in documents]
+        tokenized_docs = [clean(doc).split() for doc in documents]
         n_docs = len(documents)
         
         # Đếm Document Frequency (DF)
@@ -32,7 +50,7 @@ class TfIdfVectorizer:
 
     def transform(self, documents):
         """Dùng cho dữ liệu mới (không học thêm từ vựng mới)"""
-        tokenized_docs = [doc.lower().split() for doc in documents]
+        tokenized_docs = [clean(doc).split() for doc in documents]
         X = np.zeros((len(documents), len(self.vocab)))
         
         for i, doc in enumerate(tokenized_docs):
