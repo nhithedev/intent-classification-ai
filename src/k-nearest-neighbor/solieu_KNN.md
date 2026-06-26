@@ -20,3 +20,16 @@ Top 5 confused pairs:
 3. share_location → current_location  (14 lần)
 4. todo_list_update → todo_list  (8 lần)
 5. shopping_list_update → shopping_list  (7 lần)
+
+=== PHÂN TÍCH OOS DETECTION ===
+
+Confidence trung bình:
+| Loại dữ liệu | Confidence |
+|---|---|
+| In-scope | 0.7361 |
+| OOS | 0.3893 |
+
+Nhận xét:
+- Câu thuộc intent đã học thường có confidence cao.
+- Câu OOS thường nằm xa dữ liệu train → confidence thấp hơn.
+- KNN có khả năng phát hiện OOS khá tự nhiên thông qua khoảng cách tới các hàng xóm gần nhất.

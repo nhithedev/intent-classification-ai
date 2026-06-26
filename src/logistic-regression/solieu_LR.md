@@ -20,3 +20,15 @@ Top 5 confused pairs:
 3. calendar → calendar_update  (6 lần)
 4. redeem_rewards → rewards_balance  (6 lần)
 5. todo_list_update → todo_list  (5 lần)
+
+=== PHÂN TÍCH OOS DETECTION ===
+
+Confidence trung bình:
+| Loại dữ liệu | Confidence |
+|---|---|
+| In-scope | 0.7753 |
+| OOS | 0.2171 |
+
+Nhận xét:
+- Sự chênh lệch confidence giữa In-scope (0.7753) và OOS (0.2171) của Logistic Regression rất rõ rệt và trực quan.
+- Nhờ khoảng cách phân tách rộng này, mô hình Logistic Regression rất tối ưu khi cần đặt một ngưỡng (threshold) cụ thể để lọc bỏ câu Out-Of-Scope mà ít làm ảnh hưởng đến độ chính xác của tập In-scope.

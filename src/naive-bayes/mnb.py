@@ -1,7 +1,15 @@
 import math
 import numpy as np
 import pickle
+import sys
 from pathlib import Path
+
+# Fix encoding tiếng Việt trên Windows
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 
 # ── Đường dẫn (mnb.py nằm tại src/naive-bayes/) ───────────
 BASE_DIR  = Path(__file__).resolve().parent.parent   # → src/
@@ -312,8 +320,11 @@ if __name__ == "__main__":
 
     # ── Bước 5: Đánh giá trên tập Validation ──────────────
     print("\n[Bước 5] Đánh giá trên tập Validation:")
+    # Mặc định cũ là 0.5 (hầu như không lọc được OOS cho NB do confidence NB rất cao).
+    # Khuyến nghị đổi sang 0.95 (hoặc 0.99 tùy nhu cầu cân bằng).
+    OOS_THRESHOLD = 0.95
     evaluate(model, vectorizer, label_encoder,
-             val_corpus, val_labels, threshold=0.5)
+             val_corpus, val_labels, threshold=OOS_THRESHOLD)
 
     # ── Bước 6: Lưu mô hình ───────────────────────────────
     save_path = MODEL_DIR / "NaiveBayes_model.pkl"
